@@ -1,0 +1,3 @@
+/home/therbl/CLionProjects/multithreading/uring-tcp_server/cmake-build-debug/CMakeFiles/rebuild_cache.dir
+/home/therbl/CLionProjects/multithreading/uring-tcp_server/cmake-build-debug/CMakeFiles/edit_cache.dir
+/home/therbl/CLionProjects/multithreading/uring-tcp_server/cmake-build-debug/CMakeFiles/uring_tcp_server.dir
