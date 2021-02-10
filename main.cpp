@@ -5,23 +5,24 @@
 #include <unistd.h>
 
 int main() {
-    mp::uring_wrapper ring(8, mp::uring_wrapper::uring_type::interrupted);
-    char str[40], msg[] = "Hello, World!\n";
-    memset(str, 0, 40);
-    int fd = open("tmp.txt", O_RDWR);
-    if (fd == -1){
-        perror("open()");
-        return 1;
-    }
-    std::cout << "File opened on fd: " << fd << '\n';
-    ring.async_write_some(fd, msg, strlen(msg));
-    std::cout << "waiting for async_write_some() to finish...\n";
-    ring.wait_completion();
-
-    ring.async_read_some(fd, str, 40);
-    std::cout << "waiting for async_read_some() to finish...\n";
-    ring.wait_completion();
-    std::cout << str;
-    close(fd);
+    int fd1 = open("tmp1.txt", O_RDWR | O_NONBLOCK | 0664),
+    fd2 = open("tmp2.txt", O_RDWR | O_NONBLOCK | 0664);
+    std::cout << fd1 << ' ' << fd2 << '\n';
+    if(fd1 < 0 || fd2 < 0)
+        throw std::system_error(errno, std::system_category(), "open()");
+    mp::uring_wrapper ring(2, mp::uring_wrapper::uring_mode::interrupted);
+    ring.post_writev(fd1, std::string("Hello, World1!\n"), [](int result){std::cout << "Write operation on fd1 finished with result " << result << '\n';});
+    ring.post_writev(fd2, std::string("Hello, World2!\n"), [](int result){std::cout << "Write operation on fd2 finished with result " << result << '\n';});
+    ring.check_act();
+    ring.check_act();
+    std::string msg1, msg2;
+    msg1.resize(20, 0);
+    msg2.resize(20, 0);
+    ring.post_readv(fd1, msg1, [&msg1](int result){std::cout << "Read operation on fd1 finished with result " << result << ".\n The message is: " << msg1 << '\n';});
+    ring.post_readv(fd2, msg2, [&msg2](int result){std::cout << "Read operation on fd2 finished with result " << result << ".\n The message is: " << msg2 << '\n';});
+    ring.check_act();
+    ring.check_act();
+    close(fd1);
+    close(fd2);
     return 0;
 }
