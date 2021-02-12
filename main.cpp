@@ -5,8 +5,9 @@
 #include <unistd.h>
 
 int main() {
-    int fd1 = open("tmp1.txt", O_RDWR | O_NONBLOCK | 0664),
-    fd2 = open("tmp2.txt", O_RDWR | O_NONBLOCK | 0664);
+    int fd1 = -1, fd2 = -1;
+    fd1 = open("tmp1.txt", O_CREAT | O_RDWR, 0664);
+    fd2 = open("tmp2.txt", O_CREAT | O_RDWR, 0664);
     std::cout << fd1 << ' ' << fd2 << '\n';
     if(fd1 < 0 || fd2 < 0)
         throw std::system_error(errno, std::system_category(), "open()");
