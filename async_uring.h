@@ -9,7 +9,6 @@
 #include <system_error>
 #include <utility>
 #include <span>
-#include <ce/file_descriptor.hpp>
 #include <functional>
 #include <map>
 #include <cassert>

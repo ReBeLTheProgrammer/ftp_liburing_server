@@ -6,9 +6,7 @@ target_compile_features(${PROJECT_NAME} PRIVATE cxx_std_20)
 set_target_properties(${PROJECT_NAME} PROPERTIES CXX_EXTENSIONS OFF)
 
 list(APPEND CMAKE_MODULE_PATH ${CMAKE_CURRENT_LIST_DIR}/CMake)
-list(APPEND CMAKE_PREFIX_PATH ${CMAKE_CURRENT_LIST_DIR}/../prefix)
 
 find_package(uring REQUIRED)
-find_package(ce-utils REQUIRED)
 
-target_link_libraries(${PROJECT_NAME} PUBLIC uring ce::utils)
+target_link_libraries(${PROJECT_NAME} PUBLIC uring)
