@@ -8,12 +8,16 @@
 #include <fcntl.h>
 #include <system_error>
 #include <utility>
+#include <queue>
 #include <span>
 #include <functional>
 #include <map>
 #include <cassert>
+#include <iostream>
 
 namespace mp{
+
+    using Callback = std::function<void(int)>;
 
     class uring_wrapper{
     public:
@@ -52,17 +56,19 @@ namespace mp{
          * @param data - span, where the data will be put
          * @param cb - callback function
          */
-        template <typename Callback>
-        void post_readv(int fd, std::string& data, Callback cb){
+        void async_read_some(int fd, std::string& data, Callback cb, int offset = 0){
             io_uring_sqe *task = io_uring_get_sqe(&ring);
             iovec io_vec = {.iov_base = data.data(), .iov_len = data.length()};
             int *id = new int(fd);
-            io_uring_prep_read(task, fd, data.data(), data.size(), 0);
+            io_uring_prep_read(task, fd, data.data() + offset, data.size() - offset, 0);
             io_uring_sqe_set_data(task, id);
             int res = io_uring_submit(&ring);
             if(res < 0)
                 throw std::system_error(errno, std::system_category(), "post_readv()");
-            active_callbacks.emplace(std::pair<int, std::function<void(int)>>(*id, std::move(cb)));
+            if(!active_callbacks.contains(*id)) {
+                active_callbacks.emplace(std::pair<int, std::queue<Callback>>(*id, std::queue<Callback>()));
+            }
+            active_callbacks[*id].push(std::move(cb));
         }
 
         /**
@@ -73,16 +79,34 @@ namespace mp{
          * @param data - span, from where the data will be used
          * @param cb - callback function
          */
-        template <typename Callback>
-        void post_writev(int fd, std::string data, Callback cb){
+        void async_write_some(int fd, std::string data, Callback cb, int offset = 0){
             io_uring_sqe *task = io_uring_get_sqe(&ring);
             int *id = new int(fd);
-            io_uring_prep_write(task, fd, data.data(), data.length(), 0);
+            io_uring_prep_write(task, fd, data.data() + offset, data.length() - offset, 0);
             io_uring_sqe_set_data(task, id);
             int res = io_uring_submit(&ring);
             if(res < 0)
                 throw std::system_error(errno, std::system_category(), "post_readv()");
-            active_callbacks.emplace(std::pair<int, std::function<void(int)>>(*id, std::move(cb)));
+            if(!active_callbacks.contains(*id))
+                active_callbacks.emplace(std::pair<int, std::queue<Callback>>(*id, std::queue<Callback>()));
+            active_callbacks[*id].push(std::move(cb));
+        }
+
+        void async_read(int fd, std::string& data, int len, Callback cb, int offset = 0){
+            if(offset < len){ //This means we still need to read something
+                async_read_some(fd, data, [fd, &data, offset, this, len, cb](int res){
+                    if(res < 0){//something bad
+                        cb(res);
+                    } else { //successfully read some data, probably still have something to read
+                        if(res + offset < len)
+                            async_read(fd, data, len, cb, offset + res); //continue reading data
+                        else
+                            cb(res + offset);
+                    }
+                }, offset);
+            }
+            else //read is complete
+                cb(data.length());
         }
 
         /**
@@ -95,8 +119,10 @@ namespace mp{
             int *id = reinterpret_cast<int *>(io_uring_cqe_get_data(result));
             if(result){
                 if(active_callbacks.contains(*id)) {
-                    active_callbacks[*id](result->res);
-                    active_callbacks.erase(*id);
+                    active_callbacks[*id].front()(result->res);
+                    active_callbacks[*id].pop();
+                    if(active_callbacks[*id].empty())
+                        active_callbacks.erase(*id);
                 }
                 delete ((int*)io_uring_cqe_get_data(result));
             }
@@ -110,7 +136,7 @@ namespace mp{
     private:
         io_uring ring;
         ///This stands as a map of callbacks to be called when an i/o operation is complete for some fd.
-        std::map<int, std::function<void(int)>> active_callbacks;
+        std::map<int, std::queue<std::function<void(int)>>> active_callbacks;
     };
 
 }
