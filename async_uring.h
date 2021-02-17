@@ -65,7 +65,7 @@ namespace mp{
             active_callbacks.push_back(*i_callback);
         }
 
-        void async_write_some(int fd, std::string data, Callback cb, int offset = 0){
+        void async_write_some(int fd, const std::string& data, Callback cb, int offset = 0){
             io_uring_sqe *task = io_uring_get_sqe(&ring);
             int *id = new int(fd);
             io_uring_prep_write(task, fd, data.data() + offset, data.length() - offset, 0);
@@ -97,9 +97,9 @@ namespace mp{
                 cb(data.length());
         }
 
-        void async_write(int fd, std::string data, int len, Callback cb, int offset = 0){
+        void async_write(int fd, const std::string& data, int len, Callback cb, int offset = 0){
             if(offset < len){ //This means we still need to read something
-                async_write_some(fd, data, [fd, data, offset, this, len, cb](int res){
+                async_write_some(fd, data, [fd, &data, offset, this, len, cb](int res){
                     if(res < 0){//something bad
                         cb(res);
                     } else { //successfully read some data, probably still have something to read
