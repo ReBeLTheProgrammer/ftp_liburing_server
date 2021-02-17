@@ -33,9 +33,12 @@ int main() {
     std::string str;
     str.resize(20, 0);
     ring.async_read(fd, str, str.size(), [&str](int res){
-        std::cout << "async_read complete, result: " << res << ", the message is:\n" << str << '\n';
+        std::cout << "async_read complete, result: " << res << ", the message is:\n" << str << '\n' << std::flush;
     });
-    while(1)
-        ring.check_act();
+    ring.async_write(1, std::string("Hello, World!\n"), 15, [](int res){
+        std::cout << "Write operation successful\n" << std::flush;
+    });
+    ring.check_act();
+    ring.check_act();
     return 0;
 }
