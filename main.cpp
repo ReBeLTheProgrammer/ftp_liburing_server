@@ -5,8 +5,8 @@
 #include <unistd.h>
 
 void check_async_io_some(){
-    fd1 = open("tmp1.txt", O_CREAT | O_RDWR, 0664);
-    fd2 = open("tmp2.txt", O_CREAT | O_RDWR, 0664);
+    int fd1 = open("tmp1.txt", O_CREAT | O_RDWR, 0664);
+    int fd2 = open("tmp2.txt", O_CREAT | O_RDWR, 0664);
     std::cout << fd1 << ' ' << fd2 << '\n';
     if(fd1 < 0 || fd2 < 0)
         throw std::system_error(errno, std::system_category(), "open()");
@@ -43,14 +43,14 @@ void check_async_io(){
     ring.async_write(fd2, msg2, msg2.length(), [](int res){
         std::cout << "Write operation complete, result:" << res << '\n' << std::flush;
     });
-    ring.check_act();
-    ring.check_act();
-    close(fd2);
     ring.async_read(fd1, str, str.size(), [&str](int res){
         std::cout << "async_read complete, result: " << res << ", the message is:\n" << str << '\n' << std::flush;
     });
     ring.check_act();
+    ring.check_act();
+    ring.check_act();
     close(fd1);
+    close(fd2);
     remove("tmp.txt");
 }
 

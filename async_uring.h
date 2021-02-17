@@ -54,7 +54,7 @@ namespace mp{
             io_uring_sqe *task = io_uring_get_sqe(&ring);
             iovec io_vec = {.iov_base = data.data(), .iov_len = data.length()};
             int *id = new int(fd);
-            io_uring_prep_read(task, fd, data.data() + offset, data.size() - offset, 0);
+            io_uring_prep_read(task, fd, data.data() + offset, data.size() - offset, offset);
             intrusive_callback* i_callback = new intrusive_callback(cb);
             io_uring_sqe_set_data(task, i_callback);
             int res = io_uring_submit(&ring);
@@ -68,7 +68,7 @@ namespace mp{
         void async_write_some(int fd, const std::string& data, Callback cb, int offset = 0){
             io_uring_sqe *task = io_uring_get_sqe(&ring);
             int *id = new int(fd);
-            io_uring_prep_write(task, fd, data.data() + offset, data.length() - offset, 0);
+            io_uring_prep_write(task, fd, data.data() + offset, data.length() - offset, offset);
             intrusive_callback* i_callback = new intrusive_callback(cb);
             io_uring_sqe_set_data(task, i_callback);
             int res = io_uring_submit(&ring);
