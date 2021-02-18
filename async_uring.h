@@ -4,21 +4,17 @@
 #include <liburing.h>
 #include <string>
 #include <cstdint>
-#include <unistd.h>
-#include <fcntl.h>
 #include <system_error>
 #include <utility>
-#include <queue>
 #include <span>
 #include <functional>
 #include <boost/intrusive/list.hpp>
-#include <cassert>
-#include <iostream>
 #include <memory>
 
 namespace mp{
 
-    using Callback = std::function<void(int)>;
+    using Callback = std::function<void(std::size_t)>;
+    using Predicate = std::function<std::ptrdiff_t(std::string)>;
 
     class uring_wrapper{
     public:
@@ -51,10 +47,14 @@ namespace mp{
         }
 
         void async_read_some(int fd, std::string& data, Callback cb, int offset = 0){
+            async_read_some(fd, std::span<std::byte>({reinterpret_cast<std::byte*>(data.data()), data.size()}), cb, offset);
+        }
+
+        void async_read_some(int fd, std::span<std::byte> data, Callback cb, int offset = 0){
             io_uring_sqe *task = io_uring_get_sqe(&ring);
-            iovec io_vec = {.iov_base = data.data(), .iov_len = data.length()};
+            iovec io_vec = {.iov_base = data.data(), .iov_len = data.size()};
             int *id = new int(fd);
-            io_uring_prep_read(task, fd, data.data() + offset, data.size() - offset, offset);
+            io_uring_prep_read(task, fd, data.data(), data.size(), offset);
             intrusive_callback* i_callback = new intrusive_callback(cb);
             io_uring_sqe_set_data(task, i_callback);
             int res = io_uring_submit(&ring);
@@ -66,9 +66,13 @@ namespace mp{
         }
 
         void async_write_some(int fd, const std::string& data, Callback cb, int offset = 0){
+            async_write_some(fd, std::span<const std::byte>({reinterpret_cast<const std::byte*>(data.data()), data.size()}), cb, offset);
+        }
+
+        void async_write_some(int fd, std::span<const std::byte> data, Callback cb, int offset = 0){
             io_uring_sqe *task = io_uring_get_sqe(&ring);
             int *id = new int(fd);
-            io_uring_prep_write(task, fd, data.data() + offset, data.length() - offset, offset);
+            io_uring_prep_write(task, fd, data.data(), data.size(), offset);
             intrusive_callback* i_callback = new intrusive_callback(cb);
             io_uring_sqe_set_data(task, i_callback);
             int res = io_uring_submit(&ring);
@@ -80,15 +84,12 @@ namespace mp{
         }
 
         void async_read(int fd, std::string& data, int len, Callback cb, int offset = 0){
-            if(offset < len){ //This means we still need to read something
-                async_read_some(fd, data, [fd, &data, offset, this, len, cb](int res){
+            if(len > 0){ //This means we still need to read something
+                async_read_some(fd, {reinterpret_cast<std::byte*>(data.data() + data.size() - len), static_cast<unsigned long>(len)}, [fd, &data, offset, this, len, cb](int res){
                     if(res < 0){//something bad
                         cb(res);
                     } else { //successfully read some data, probably still have something to read
-                        if(res + offset < len)
-                            async_read(fd, data, len, cb, offset + res); //continue reading data
-                        else
-                            cb(res + offset);
+                        async_read(fd, data, len - res, cb, offset + res); //continue reading data
                     }
                 }, offset);
                 should_continue_waiting = true;
@@ -98,21 +99,42 @@ namespace mp{
         }
 
         void async_write(int fd, const std::string& data, int len, Callback cb, int offset = 0){
-            if(offset < len){ //This means we still need to read something
-                async_write_some(fd, data, [fd, &data, offset, this, len, cb](int res){
+            if(len > 0){ //This means we still need to write something
+                async_write_some(fd, {reinterpret_cast<const std::byte*>(data.data() + data.size() - len), static_cast<unsigned long>(len)}, [fd, &data, offset, this, len, cb](int res){
                     if(res < 0){//something bad
                         cb(res);
                     } else { //successfully read some data, probably still have something to read
-                        if(res + offset < len)
-                            async_write(fd, data, len, cb, offset + res); //continue reading data
-                        else
-                            cb(res + offset);
+                        async_write(fd, data, len - res, cb, offset + res); //continue reading data
                     }
                 }, offset);
                 should_continue_waiting = true;
             }
             else //read is complete
                 cb(data.length());
+        }
+
+        void async_read_until(int fd, std::string& data, Predicate pred, Callback cb, int offset = 0){
+                if(std::ptrdiff_t match_len = pred(data); match_len > 0){
+                    //if already got match, call back.
+                    cb(match_len);
+                    return;
+                }
+                //if still no match,
+                //check if we've got enough memory:
+                if(data.size() == data.max_size())
+                    cb(data.size()); //if no match is found, but we ran into max_size() then call back.
+
+                //resize to maximum available length
+                std::size_t len = std::min(data.max_size(), data.capacity()) - data.size();
+                data.resize(data.size() + len);
+                async_read_some(fd, {reinterpret_cast<std::byte*>(data.data() + data.size() - len), len}, [fd, &data, offset, this, pred, cb, len](int res){
+                    data.resize(data.size() - len + res);
+                    if(res < 0)
+                        cb(res);
+                    else
+                        async_read_until(fd, data, pred, cb, offset + res);
+                }, offset);
+            should_continue_waiting = true;
         }
 
         void check_act(){
