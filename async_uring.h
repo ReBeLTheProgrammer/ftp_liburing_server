@@ -46,7 +46,9 @@ namespace mp{
             }
         }
 
-        void async_read_some(int fd, std::string& data, Callback cb, int offset = 0){
+        template <typename DynamicBuffer>
+        void async_read_some(int fd, DynamicBuffer& data, Callback cb, int offset = 0){
+            static_assert(sizeof(decltype(*data.data())) == 1, "Buffer must have byte-sized elements.");
             async_read_some(fd, std::span<std::byte>({reinterpret_cast<std::byte*>(data.data()), data.size()}), cb, offset);
         }
 
@@ -65,7 +67,9 @@ namespace mp{
             active_callbacks.push_back(*i_callback);
         }
 
-        void async_write_some(int fd, const std::string& data, Callback cb, int offset = 0){
+        template <typename DynamicBuffer>
+        void async_write_some(int fd, const DynamicBuffer& data, Callback cb, int offset = 0){
+            static_assert(sizeof(decltype(*data.data())) == 1, "Buffer must have byte-sized elements.");
             async_write_some(fd, std::span<const std::byte>({reinterpret_cast<const std::byte*>(data.data()), data.size()}), cb, offset);
         }
 
@@ -83,7 +87,9 @@ namespace mp{
             active_callbacks.push_back(*i_callback);
         }
 
-        void async_read(int fd, std::string& data, int len, Callback cb, int offset = 0){
+        template <typename DynamicBuffer>
+        void async_read(int fd, DynamicBuffer& data, int len, Callback cb, int offset = 0){
+            static_assert(sizeof(decltype(*data.data())) == 1, "Buffer must have byte-sized elements.");
             if(len > 0){ //This means we still need to read something
                 async_read_some(fd, {reinterpret_cast<std::byte*>(data.data() + data.size() - len), static_cast<unsigned long>(len)}, [fd, &data, offset, this, len, cb](int res){
                     if(res < 0){//something bad
@@ -98,7 +104,9 @@ namespace mp{
                 cb(data.length());
         }
 
-        void async_write(int fd, const std::string& data, int len, Callback cb, int offset = 0){
+        template <typename DynamicBuffer>
+        void async_write(int fd, const DynamicBuffer& data, int len, Callback cb, int offset = 0){
+            static_assert(sizeof(decltype(*data.data())) == 1, "Buffer must have byte-sized elements.");
             if(len > 0){ //This means we still need to write something
                 async_write_some(fd, {reinterpret_cast<const std::byte*>(data.data() + data.size() - len), static_cast<unsigned long>(len)}, [fd, &data, offset, this, len, cb](int res){
                     if(res < 0){//something bad
@@ -113,7 +121,9 @@ namespace mp{
                 cb(data.length());
         }
 
-        void async_read_until(int fd, std::string& data, Predicate pred, Callback cb, int offset = 0){
+        template<typename DynamicBuffer>
+        void async_read_until(int fd, DynamicBuffer& data, Predicate pred, Callback cb, int offset = 0){
+            static_assert(sizeof(decltype(*data.data())) == 1, "Buffer must have byte-sized elements.");
                 if(std::ptrdiff_t match_len = pred(data); match_len > 0){
                     //if already got match, call back.
                     cb(match_len);
@@ -154,19 +164,19 @@ namespace mp{
         }
 
         ~uring_wrapper(){
-            active_callbacks.clear_and_dispose(std::default_delete<intrusive_callback>());
             io_uring_queue_exit(&ring);
+            active_callbacks.clear_and_dispose(std::default_delete<intrusive_callback>());
         }
 
     private:
         io_uring ring;
         bool should_continue_waiting;
 
-    class intrusive_callback: public boost::intrusive::list_base_hook<> {
-        public:
-            intrusive_callback(Callback cb): cb_(cb) {}
-            Callback cb_;
-        };
+        class intrusive_callback: public boost::intrusive::list_base_hook<> {
+            public:
+                intrusive_callback(Callback cb): cb_(cb) {}
+                Callback cb_;
+            };
 
         boost::intrusive::list<intrusive_callback> active_callbacks;
     };
