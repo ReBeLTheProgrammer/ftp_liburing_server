@@ -91,12 +91,12 @@ void check_async_read_until(std::shared_ptr<mp::uring_wrapper> ring){
             std::make_shared<std::string>("Gotcha!")};
     int offset = 0;
     for(auto& s: msgs) {
-        ring->async_write(fd1, std::move(s), s->length(), [s](std::size_t res) mutable { auto lk = std::lock_guard(m); std::cout << "Wrote " << *s << '\n'; }, offset);
+        ring->async_write(fd1, std::move(s), s->length(), [s](std::size_t res) mutable { auto lk = std::lock_guard(m); std::cout << "[check_async_read_until()]: Wrote " << *s << '\n'; }, offset);
         offset += s->length();
     }
     ring->async_read_until(fd1, std::move(msg), "o", [msg, fd1](std::size_t res){
         auto lk = std::lock_guard(m);
-        std::cout << "read_until() finished, message: " << *msg << '\n';
+        std::cout << "[check_async_read_until()]: read_until() finished, message: " << *msg << '\n';
         close(fd1);
         remove("tmp3.txt");
     });

@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.16)
 project(uring_tcp_server)
 
-add_executable(uring_tcp_server main.cpp async_uring.h)# FTPServerController.cpp FTPServerController.h FTPConnection.cpp FTPConnection.h FTPConnectionState.cpp FTPConnectionState.h FTPCommon.h)
+add_executable(uring_tcp_server main.cpp async_uring.h async_uring.cpp)# FTPServerController.cpp FTPServerController.h FTPConnection.cpp FTPConnection.h FTPConnectionState.cpp FTPConnectionState.h FTPCommon.h)
 target_compile_features(${PROJECT_NAME} PRIVATE cxx_std_20)
 set_target_properties(${PROJECT_NAME} PROPERTIES CXX_EXTENSIONS OFF)
 
