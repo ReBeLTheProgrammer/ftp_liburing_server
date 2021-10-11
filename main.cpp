@@ -80,7 +80,7 @@ void check_async_io(std::shared_ptr<mp::uring_wrapper> ring){
 
 void check_async_read_until(std::shared_ptr<mp::uring_wrapper> ring){
     std::cout << "check_async_read_until() starts.\n";
-    int fd1 = open("tmp.txt", O_CREAT | O_RDWR, 0664);
+    int fd1 = open("tmp3.txt", O_CREAT | O_RDWR, 0664);
     auto msg = std::make_shared<std::string>();
     msg->reserve(200);
     std::vector<std::shared_ptr<std::string>> msgs = {
@@ -91,14 +91,14 @@ void check_async_read_until(std::shared_ptr<mp::uring_wrapper> ring){
             std::make_shared<std::string>("Gotcha!")};
     int offset = 0;
     for(auto& s: msgs) {
-        ring->async_write(fd1, std::move(s), s->length(), [&s](std::size_t res) { auto lk = std::lock_guard(m); std::cout << "Wrote " << s << '\n'; }, offset);
+        ring->async_write(fd1, std::move(s), s->length(), [s](std::size_t res) mutable { auto lk = std::lock_guard(m); std::cout << "Wrote " << *s << '\n'; }, offset);
         offset += s->length();
     }
     ring->async_read_until(fd1, std::move(msg), "o", [msg, fd1](std::size_t res){
         auto lk = std::lock_guard(m);
-        std::cout << "read_until() finished, message: " << msg << '\n';
+        std::cout << "read_until() finished, message: " << *msg << '\n';
         close(fd1);
-        remove("tmp.txt");
+        remove("tmp3.txt");
     });
 }
 
@@ -118,7 +118,7 @@ int main() {
                          std::allocator<void>());
     pool.executor().post([ring](){ check_async_io_some(ring); }, std::allocator<void>());
     pool.executor().post([ring](){ check_async_io(ring); }, std::allocator<void>());
-//    pool.executor().post([ring](){ check_async_read_until(ring); }, std::allocator<void>());
+    pool.executor().post([ring](){ check_async_read_until(ring); }, std::allocator<void>());
     pool.join();
     return 0;
 }

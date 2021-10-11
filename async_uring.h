@@ -96,7 +96,7 @@ namespace mp{
                 std::cout << "async_read(): len = " << len << '\n';
             }
             if(len > 0){ //This means we still need to read something
-                async_read_some(fd, {reinterpret_cast<std::byte*>(data->data() + offset), static_cast<unsigned long>(len)}, std::move(data), [fd, &data, offset, this, len, cb](int res){
+                async_read_some(fd, {reinterpret_cast<std::byte*>(data->data() + data->size() - len), static_cast<unsigned long>(len)}, std::move(data), [fd, data, offset, this, len, cb](int res) mutable {
                     if(res < 0){//something bad
                         cb(res);
                     } else { //successfully read some data, probably still have something to read
@@ -116,7 +116,7 @@ namespace mp{
                 std::cout << "async_write(): len = " << len << '\n';
             }
             if(len > 0){ //This means we still need to write something
-                async_write_some(fd, {reinterpret_cast<const std::byte*>(data->data() + offset), static_cast<unsigned long>(len)}, std::move(data), [fd, &data, offset, this, len, cb](int res){
+                async_write_some(fd, {reinterpret_cast<const std::byte*>(data->data() + data->size() - len), static_cast<unsigned long>(len)}, std::move(data), [fd, data, offset, this, len, cb](int res) mutable {
                     if(res < 0){//something bad
                         cb(res);
                     } else { //successfully read some data, probably still have something to read
@@ -152,7 +152,7 @@ namespace mp{
                 //resize to maximum available length
                 std::size_t len = std::min(data->max_size(), data->capacity()) - data->size();
                 data->resize(data->size() + len);
-                async_read_some(fd, {reinterpret_cast<std::byte*>(data->data() + data->size() - len), len}, std::move(data), [fd, &data, offset, this, pred, cb, len](int res){
+                async_read_some(fd, {reinterpret_cast<std::byte*>(data->data() + data->size() - len), len}, std::move(data), [fd, data, offset, this, pred, cb, len](int res) mutable {
                     data->resize(data->size() - len + res);
                     if(res < 0)
                         cb(res);
