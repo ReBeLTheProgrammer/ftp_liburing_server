@@ -3,90 +3,122 @@
 #include <iostream>
 #include <unistd.h>
 #include <algorithm>
+#include <mutex>
 
-void check_async_io_some(){
-    std::cout << "check_async_io_some() starts.\n";
-    int fd1 = open("tmp1.txt", O_CREAT | O_RDWR, 0664);
-    int fd2 = open("tmp2.txt", O_CREAT | O_RDWR, 0664);
+std::mutex m;
+
+void check_async_io_some(std::shared_ptr<mp::uring_wrapper> ring){
+    {
+        auto lk = std::lock_guard(m);
+        std::cout << "check_async_io_some() starts.\n";
+    }
+    int fd1, fd2;
+    {
+        auto lk = std::lock_guard(m);
+        fd1 = open("tmp1.txt", O_CREAT | O_RDWR, 0664);
+        fd2 = open("tmp2.txt", O_CREAT | O_RDWR, 0664);
+    }
     if(fd1 < 0 || fd2 < 0)
         throw std::system_error(errno, std::system_category(), "open()");
-    mp::uring_wrapper ring(2, mp::uring_wrapper::uring_mode::interrupted);
-    ring.async_write_some(fd1, std::string("Hello, World1!\n"), [](int result){std::cout << "Write operation on fd1 finished with result " << result << '\n';});
-    ring.async_write_some(fd2, std::string("Hello, World2!\n"), [](int result){std::cout << "Write operation on fd2 finished with result " << result << '\n';});
-    ring.check_act();
-    ring.check_act();
-    std::string msg1, msg2;
-    msg1.resize(20, 0);
-    msg2.resize(20, 0);
-    ring.async_read_some(fd1, msg1, [&msg1](int result){std::cout << "Read operation on fd1 finished with result " << result << ".\n The message is: " << msg1 << '\n';});
-    ring.async_read_some(fd2, msg2, [&msg2](int result){std::cout << "Read operation on fd2 finished with result " << result << ".\n The message is: " << msg2 << '\n';});
-    ring.check_act();
-    ring.check_act();
-    close(fd1);
-    close(fd2);
-    remove("tmp1.txt");
-    remove("tmp2.txt");
+    auto _msg1 = std::make_shared<std::string>("Hello, World1!\n"), _msg2 = std::make_shared<std::string>("Hello, World2!\n");
+    ring->async_write_some(fd1, std::move(_msg1), [](int result){
+        auto lk = std::lock_guard(m);
+        std::cout << "[check_async_io_some()]: Write operation on fd1 finished with result " << result << '\n';
+    });
+    ring->async_write_some(fd2, std::move(_msg2), [](int result){
+        auto lk = std::lock_guard(m);
+        std::cout << "[check_async_io_some()]: Write operation on fd2 finished with result " << result << '\n';
+    });
+    auto msg1 = std::make_shared<std::string>(), msg2 = std::make_shared<std::string>();
+    msg1->resize(20, 0);
+    msg2->resize(20, 0);
+    ring->async_read_some(fd1, std::move(msg1), [msg1, fd1](int result){
+        auto lk = std::lock_guard(m);
+        std::cout << "[check_async_io_some()]: Read operation on fd1 finished with result " << result << ".\n The message is: " << *msg1 << '\n';
+        close(fd1);
+        remove("tmp1.txt");
+    });
+    ring->async_read_some(fd2, std::move(msg2), [msg2, fd2](int result){
+        auto lk = std::lock_guard(m);
+        std::cout << "[check_async_io_some()]: Read operation on fd2 finished with result " << result << ".\n The message is: " << *msg2 << '\n';
+        close(fd2);
+        remove("tmp2.txt");
+    });
 }
 
-void check_async_io(){
-    std::cout << "check_async_io() starts.\n";
-    int fd2 = open("tmp.txt", O_CREAT | O_WRONLY | O_APPEND, 0664);
-    int fd1 = open("tmp.txt", O_CREAT | O_RDONLY, 0664);
-    mp::uring_wrapper ring(4, mp::uring_wrapper::uring_mode::interrupted);
-    std::string str;
-    str.resize(20, 0);
-    std::string msg1, msg2;
-    msg1 = "Hello!\n";
-    ring.async_write(fd2, msg1, msg1.length(), [](int res){
-        std::cout << "Write operation complete, result:" << res << '\n' << std::flush;
+void check_async_io(std::shared_ptr<mp::uring_wrapper> ring){
+    {
+        auto lk = std::lock_guard(m);
+        std::cout << "check_async_io() starts.\n";
+    }
+    int fd1, fd2;
+    {
+        auto lk = std::lock_guard(m);
+        fd2 = open("tmp.txt", O_CREAT | O_WRONLY | O_APPEND, 0664);
+        fd1 = open("tmp.txt", O_CREAT | O_RDONLY, 0664);
+    }
+    auto str = std::make_shared<std::string>();
+    str->resize(20, 0);
+    auto msg1 = std::make_shared<std::string>("Hello!\n"), msg2 = std::make_shared<std::string>("Name's Petya\n");
+    ring->async_write(fd2, std::move(msg1), msg1->length(), [](int res){
+        auto lk = std::lock_guard(m);
+        std::cout << "[check_async_io()]: Write operation complete, result:" << res << '\n';
     });
-    ring.async_read(fd1, str, str.size(), [&str](int res){
-        std::cout << "async_read complete, result: " << res << ", the message is:\n" << str << '\n' << std::flush;
+    ring->async_read(fd1, std::move(str), str->size(), [str, fd1, fd2](int res){
+        auto lk = std::lock_guard(m);
+        std::cout << "[check_async_io()]: async_read complete, result: " << res << ", the message is:\n" << *str << '\n';
+        close(fd1);
+        close(fd2);
+        remove("tmp.txt");
     });
-    msg2 = "Name's Petya\n";
-    ring.async_write(fd2, msg2, msg2.length(), [](int res){
-        std::cout << "Write operation complete, result:" << res << '\n' << std::flush;
+    ring->async_write(fd2, std::move(msg2), msg2->length(), [](int res){
+        auto lk = std::lock_guard(m);
+        std::cout << "[check_async_io()]: Write operation complete, result:" << res << '\n';
     });
-    ring.check_act();
-    ring.check_act();
-    ring.check_act();
-    close(fd1);
-    close(fd2);
-    remove("tmp.txt");
+
 }
 
-void check_async_read_until(){
+void check_async_read_until(std::shared_ptr<mp::uring_wrapper> ring){
     std::cout << "check_async_read_until() starts.\n";
     int fd1 = open("tmp.txt", O_CREAT | O_RDWR, 0664);
-    mp::uring_wrapper ring(64, mp::uring_wrapper::uring_mode::interrupted);
-    std::string msg;
-    msg.resize(20);
-    msg.reserve(200);
-    std::vector<std::string> msgs = {"Hi!\n", "WYD?\n", "Just chillin'\n", "Nice\n", "Gotcha!"};
+    auto msg = std::make_shared<std::string>();
+    msg->reserve(200);
+    std::vector<std::shared_ptr<std::string>> msgs = {
+            std::make_shared<std::string>("Hi!\n"),
+            std::make_shared<std::string>("WYD?\n"),
+            std::make_shared<std::string>("Just chillin'\n"),
+            std::make_shared<std::string>("Nice\n"),
+            std::make_shared<std::string>("Gotcha!")};
     int offset = 0;
-    for(std::string& s: msgs) {
-        ring.async_write(fd1, s, s.length(), [&s](std::size_t res) {std::cout << "Wrote " << s << '\n'; }, offset);
-        offset += s.length();
+    for(auto& s: msgs) {
+        ring->async_write(fd1, std::move(s), s->length(), [&s](std::size_t res) { auto lk = std::lock_guard(m); std::cout << "Wrote " << s << '\n'; }, offset);
+        offset += s->length();
     }
-    ring.async_read_until(fd1, msg, [](std::string d){
-        auto res = std::find(d.begin(), d.end(), 'o');
-        if(res == d.end())
-            return ptrdiff_t(-1);
-        else return res - d.begin() + 1;
-    }, [&msg](std::size_t res){
+    ring->async_read_until(fd1, std::move(msg), "o", [msg, fd1](std::size_t res){
+        auto lk = std::lock_guard(m);
         std::cout << "read_until() finished, message: " << msg << '\n';
+        close(fd1);
+        remove("tmp.txt");
     });
-    for(int i = 0; i < 6; i++) {
-        ring.check_act();
-        std::cout << i + 1 << " checks passed\n";
-    }
-    close(fd1);
-    remove("tmp.txt");
 }
 
+#include <boost/asio/thread_pool.hpp>
+
 int main() {
-    check_async_io_some();
-    check_async_io();
-    check_async_read_until();
+    boost::asio::thread_pool pool(2);
+    auto ring = std::make_shared<mp::uring_wrapper>(16);
+    pool.executor().post([&pool, ring](){
+        while(true) {
+            pool.executor().post(ring->check_act(), std::allocator<void>());
+            {
+                auto lk = std::lock_guard(m);
+                std::cout << "Posted a new callback to the pool\n";
+            }
+        }},
+                         std::allocator<void>());
+    pool.executor().post([ring](){ check_async_io_some(ring); }, std::allocator<void>());
+    pool.executor().post([ring](){ check_async_io(ring); }, std::allocator<void>());
+//    pool.executor().post([ring](){ check_async_read_until(ring); }, std::allocator<void>());
+    pool.join();
     return 0;
 }
