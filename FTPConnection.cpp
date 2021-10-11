@@ -64,12 +64,17 @@ namespace mp{
     }
 
     void FTPConnection::startActing() {
+        enqueueConnection(_localAddr.sin_port,
+                          std::make_shared<FTPConnection>(
+                                  std::move(_parent),
+                                  std::move(_root),
+                                  std::move(_fileSystem)
+                          )
+                          );
         _state = std::make_unique<FTPConnectionStateNotLoggedIn>(std::shared_ptr<FTPConnection>(reinterpret_cast<FTPConnection*>(this)));
         _ring->async_write(
                 _fd,
-                "220-Connection Established\r\n"
-                "220-Note that this server accepts only\r\n"
-                "220 anonymous access mode.\r\n"s,
+                std::make_shared<std::string>("220-Connection Established\r\n220-Note that this server accepts only\r\n220 anonymous access mode.\r\n"s),
                 96,
                 defaultAsyncOpHandler
         );
@@ -78,9 +83,9 @@ namespace mp{
     void FTPConnection::processCommand(std::size_t commandLen) {
         if(commandLen < 0)
             stop();
-        ci_string controlSeq = _command.substr(0, _command.find(' ')).c_str(); // NOLINT(readability-redundant-string-cstr)
-        std::string commandField = _command.substr(_command.find(' ') + 1, _command.find("\r\n"));
-        _command.erase(0, _command.find("\r\n") + 2);
+        ci_string controlSeq = _command->substr(0, _command->find(' ')).c_str(); // NOLINT(readability-redundant-string-cstr)
+        std::string commandField = _command->substr(_command->find(' ') + 1, _command->find("\r\n"));
+        _command->erase(0, _command->find("\r\n") + 2);
         if(controlSeq == "USER"){
             _state->user(commandField);
         } else if (controlSeq == "CWD"){
@@ -108,14 +113,14 @@ namespace mp{
         } else if (controlSeq == "NOOP"){
             _state->noop();
         } else {
-            _ring->async_write(_fd, "500 Incorrect Command\r\n"s, 25, defaultAsyncOpHandler);
+            _ring->async_write(_fd, std::make_shared<std::string>("500 Incorrect Command\r\n"s), 25, defaultAsyncOpHandler);
         }
     }
 
     void FTPConnectionState::noop() const {
         _handledConnection->ring()->async_write(
                 _handledConnection->fd(),
-                "200 Ok\r\n"s,
+                std::make_shared<std::string>("200 Ok\r\n"s),
                 8,
                 _handledConnection->defaultAsyncOpHandler
                 );
@@ -127,7 +132,7 @@ namespace mp{
         else
             _handledConnection->ring()->async_write(
                     _handledConnection->fd(),
-                    "530 User Name Incorrect\r\n"s,
+                    std::make_shared<std::string>("530 User Name Incorrect\r\n"s),
                     25,
                     _handledConnection->defaultAsyncOpHandler
                     );
@@ -137,7 +142,7 @@ namespace mp{
         if(username != "anonymous") {
             _handledConnection->ring()->async_write(
                     _handledConnection->fd(),
-                    "530 User Name Incorrect\r\n"s,
+                    std::make_shared<std::string>("530 User Name Incorrect\r\n"s),
                     25,
                     _handledConnection->defaultAsyncOpHandler
             );
@@ -153,7 +158,7 @@ namespace mp{
         } catch (const std::exception &e) {
             _handledConnection->ring()->async_write(
                     _handledConnection->fd(),
-                    "550 Illegal path\r\n"s,
+                    std::make_shared<std::string>("550 Illegal path\r\n"s),
                     18,
                     _handledConnection->defaultAsyncOpHandler
             );
@@ -163,14 +168,14 @@ namespace mp{
         if(!std::filesystem::exists(fullPath))
             _handledConnection->ring()->async_write(
                     _handledConnection->fd(),
-                    "550 File does not exist\r\n"s,
+                    std::make_shared<std::string>("550 File does not exist\r\n"s),
                     25,
                     _handledConnection->defaultAsyncOpHandler
             );
         else if(!std::filesystem::is_directory(fullPath))
             _handledConnection->ring()->async_write(
                     _handledConnection->fd(),
-                    "550 Specified path is not a directory\r\n"s,
+                    std::make_shared<std::string>("550 Specified path is not a directory\r\n"s),
                     39,
                     _handledConnection->defaultAsyncOpHandler
             );
@@ -178,7 +183,7 @@ namespace mp{
             _handledConnection->pwd() = path;
             _handledConnection->ring()->async_write(
                     _handledConnection->fd(),
-                    "200 Directory changed\r\n"s,
+                    std::make_shared<std::string>("200 Directory changed\r\n"s),
                     23,
                     _handledConnection->defaultAsyncOpHandler
             );
@@ -191,13 +196,13 @@ namespace mp{
             pwd = pwd.parent_path();
             _handledConnection->ring()->async_write(
                     _handledConnection->fd(),
-                    "200 Directory changed\r\n"s,
+                    std::make_shared<std::string>("200 Directory changed\r\n"s),
                     23,
                     _handledConnection->defaultAsyncOpHandler
                     );
         } else _handledConnection->ring()->async_write(
                     _handledConnection->fd(),
-                    "550 Path not found\r\n"s,
+                    std::make_shared<std::string>("550 Path not found\r\n"s),
                     20,
                     _handledConnection->defaultAsyncOpHandler
                 );
@@ -209,7 +214,7 @@ namespace mp{
     
     void FTPConnectionStateLoggedIn::port(const std::string& hostPort){
         _handledConnection->ring()->async_write(_handledConnection->fd(),
-                                                "500 Command unavailable\r\n"s,
+                                                std::make_shared<std::string>("500 Command unavailable\r\n"s),
                                                 25,
                                                 _handledConnection->defaultAsyncOpHandler);
     }
@@ -223,13 +228,13 @@ namespace mp{
             //Do nothing and print
             _handledConnection->ring()->async_write(
                     _handledConnection->fd(),
-                    "200 Type changed\r\n"s,
+                    std::make_shared<std::string>("200 Type changed\r\n"s),
                     18,
                     _handledConnection->defaultAsyncOpHandler
                     );
         else _handledConnection->ring()->async_write(
                 _handledConnection->fd(),
-                "501 Invalid/Unsupported TYPE parameter\r\n"s,
+                std::make_shared<std::string>("501 Invalid/Unsupported TYPE parameter\r\n"s),
                 40,
                 _handledConnection->defaultAsyncOpHandler
                 );
@@ -240,7 +245,7 @@ namespace mp{
             _handledConnection->setStructure(FTPFileStructure::File);
             _handledConnection->ring()->async_write(
                     _handledConnection->fd(),
-                    "200 Structure changed\r\n"s,
+                    std::make_shared<std::string>("200 Structure changed\r\n"s),
                     23,
                     _handledConnection->defaultAsyncOpHandler
                     );
@@ -248,14 +253,14 @@ namespace mp{
             _handledConnection->setStructure(FTPFileStructure::Record);
             _handledConnection->ring()->async_write(
                     _handledConnection->fd(),
-                    "200 Structure changed\r\n"s,
+                    std::make_shared<std::string>("200 Structure changed\r\n"s),
                     23,
                     _handledConnection->defaultAsyncOpHandler
             );
         } else{
             _handledConnection->ring()->async_write(
                     _handledConnection->fd(),
-                    "501 Invalid/Unsupported STRUcture parameter\r\n"s,
+                    std::make_shared<std::string>("501 Invalid/Unsupported STRUcture parameter\r\n"s),
                     45,
                     _handledConnection->defaultAsyncOpHandler
             );
@@ -267,13 +272,13 @@ namespace mp{
             //Do nothing and write
             _handledConnection->ring()->async_write(
                     _handledConnection->fd(),
-                    "200 Mode changed\r\n"s,
+                    std::make_shared<std::string>("200 Mode changed\r\n"s),
                     18,
                     _handledConnection->defaultAsyncOpHandler
             );
         else _handledConnection->ring()->async_write(
                     _handledConnection->fd(),
-                    "501 Invalid/Unsupported MODE parameter\r\n"s,
+                    std::make_shared<std::string>("501 Invalid/Unsupported MODE parameter\r\n"s),
                     40,
                     _handledConnection->defaultAsyncOpHandler
             );
@@ -288,7 +293,7 @@ namespace mp{
         } catch (const std::exception &e) {
             _handledConnection->ring()->async_write(
                     _handledConnection->fd(),
-                    "501 Illegal path\r\n"s,
+                    std::make_shared<std::string>("501 Illegal path\r\n"s),
                     18,
                     _handledConnection->defaultAsyncOpHandler
             );
@@ -298,14 +303,14 @@ namespace mp{
         if(!std::filesystem::exists(fullPath))
             _handledConnection->ring()->async_write(
                     _handledConnection->fd(),
-                    "501 File does not exist\r\n"s,
+                    std::make_shared<std::string>("501 File does not exist\r\n"s),
                     25,
                     _handledConnection->defaultAsyncOpHandler
             );
         else if(std::filesystem::is_directory(fullPath))
             _handledConnection->ring()->async_write(
                     _handledConnection->fd(),
-                    "501 Specified path is a directory\r\n"s,
+                    std::make_shared<std::string>("501 Specified path is a directory\r\n"s),
                     35,
                     _handledConnection->defaultAsyncOpHandler
             );
@@ -314,7 +319,7 @@ namespace mp{
             if(fd == -1)
                 _handledConnection->ring()->async_write(
                         _handledConnection->fd(),
-                        "550 Error opening the requested file\r\n"s,
+                        std::make_shared<std::string>("550 Error opening the requested file\r\n"s),
                         38,
                         _handledConnection->defaultAsyncOpHandler
                 );
@@ -329,7 +334,7 @@ namespace mp{
                                 [this](){
                                     _handledConnection->ring()->async_write(
                                             _handledConnection->fd(),
-                                            "226 File Transfer Successful\r\n"s,
+                                            std::make_shared<std::string>("226 File Transfer Successful\r\n"s),
                                             30,
                                             _handledConnection->defaultAsyncOpHandler
                                     );
@@ -337,7 +342,7 @@ namespace mp{
                                 [this](){
                                     _handledConnection->ring()->async_write(
                                             _handledConnection->fd(),
-                                            "150 Opened data connection\r\n"s,
+                                            std::make_shared<std::string>("150 Opened data connection\r\n"s),
                                             28,
                                             [](std::int64_t fd){}
                                     );
@@ -357,7 +362,7 @@ namespace mp{
         } catch (const std::exception &e) {
             _handledConnection->ring()->async_write(
                     _handledConnection->fd(),
-                    "501 Illegal path\r\n"s,
+                    std::make_shared<std::string>("501 Illegal path\r\n"s),
                     18,
                     _handledConnection->defaultAsyncOpHandler
             );
@@ -367,14 +372,14 @@ namespace mp{
         if(!std::filesystem::exists(fullPath))
             _handledConnection->ring()->async_write(
                     _handledConnection->fd(),
-                    "501 File does not exist\r\n"s,
+                    std::make_shared<std::string>("501 File does not exist\r\n"s),
                     25,
                     _handledConnection->defaultAsyncOpHandler
             );
         else if(std::filesystem::is_directory(fullPath))
             _handledConnection->ring()->async_write(
                     _handledConnection->fd(),
-                    "501 Specified path is a directory\r\n"s,
+                    std::make_shared<std::string>("501 Specified path is a directory\r\n"s),
                     35,
                     _handledConnection->defaultAsyncOpHandler
             );
@@ -383,7 +388,7 @@ namespace mp{
             if(fd == -1)
                 _handledConnection->ring()->async_write(
                         _handledConnection->fd(),
-                        "450 Error opening the requested file\r\n"s,
+                        std::make_shared<std::string>("450 Error opening the requested file\r\n"s),
                         38,
                         _handledConnection->defaultAsyncOpHandler
                 );
@@ -398,7 +403,7 @@ namespace mp{
                                 [this](){
                                     _handledConnection->ring()->async_write(
                                             _handledConnection->fd(),
-                                            "226 File Transfer Successful\r\n"s,
+                                            std::make_shared<std::string>("226 File Transfer Successful\r\n"s),
                                             30,
                                             _handledConnection->defaultAsyncOpHandler
                                     );
@@ -406,7 +411,7 @@ namespace mp{
                                 [this](){
                                     _handledConnection->ring()->async_write(
                                             _handledConnection->fd(),
-                                            "150 Opened data connection\r\n"s,
+                                            std::make_shared<std::string>("150 Opened data connection\r\n"s),
                                             28,
                                             [](std::int64_t fd){}
                                     );
@@ -420,7 +425,7 @@ namespace mp{
     void FTPConnectionStateLoggedIn::pwd() const {
         _handledConnection->ring()->async_write(
                 _handledConnection->fd(),
-                "200 Current directory is "s + _handledConnection->pwd().string() + "\r\n"s,
+                std::make_shared<std::string>("200 Current directory is "s + _handledConnection->pwd().string() + "\r\n"s),
                 27 + _handledConnection->pwd().string().size(),
                 _handledConnection->defaultAsyncOpHandler
                 );
@@ -434,7 +439,7 @@ namespace mp{
         } catch (const std::exception &e) {
             _handledConnection->ring()->async_write(
                     _handledConnection->fd(),
-                    "501 Illegal path\r\n"s,
+                    std::make_shared<std::string>("501 Illegal path\r\n"s),
                     18,
                     _handledConnection->defaultAsyncOpHandler
             );
@@ -447,7 +452,7 @@ namespace mp{
             listing += "250 Operation successful\r\n";
             _handledConnection->ring()->async_write(
                     _handledConnection->fd(),
-                    listing,
+                    std::make_shared<std::string>(listing),
                     listing.size(),
                     _handledConnection->defaultAsyncOpHandler
             );
@@ -455,7 +460,7 @@ namespace mp{
         else
             _handledConnection->ring()->async_write(
                     _handledConnection->fd(),
-                    "501 specified path is not a directory\r\n"s,
+                    std::make_shared<std::string>("501 specified path is not a directory\r\n"s),
                     39,
                     _handledConnection->defaultAsyncOpHandler
             );

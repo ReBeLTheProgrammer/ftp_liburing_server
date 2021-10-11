@@ -11,7 +11,10 @@
 #include <cassert>
 #include <mutex>
 #include <functional>
+#include <iostream>
 #include "async_uring.h"
+
+extern std::mutex m;
 
 namespace mp {
 
@@ -215,6 +218,10 @@ class FTPFileSystem {
             _waitingForConnectionCallback();
             _ring->async_sock_accept(_fd, reinterpret_cast<sockaddr*>(&_remoteAddr), &_addrLen, 0, [this](int res){
                 _fd = res;
+                {
+                    auto lk = std::lock_guard(m);
+                    std::cout << "async_sock_accept() returned " << res << '\n';
+                }
                 //Connection accepted (with any result) - now we can clear ourself from queue and allow other connections to accept.
                 {
                     auto lk = std::lock_guard(*_dataConnectionQueueMutex);
@@ -244,30 +251,36 @@ class FTPFileSystem {
         }
 
         void enqueueConnection(int port, std::shared_ptr<FTPConnectionBase>&& connection){
-            auto lk = std::lock_guard(*_dataConnectionQueueMutex);
-            //The queue is now locked, we can thread-safely enqueue the connection.
-            if(!_dataConnectionSocketMap->contains(port)){
-                int fd;
-                do {
-                    fd = socket(AF_INET, SOCK_STREAM, 0);
-                } while (fd == -1);
-                int res;
-                sockaddr_in addr;
-                addr.sin_port = port;
-                addr.sin_addr = _localAddr.sin_addr;
-                do {
-                    res = bind(fd, reinterpret_cast<sockaddr*>(&addr), sizeof(addr));
-                } while(res == -1);
-                do{
-                    res = listen(fd, 20);
-                } while(res == -1);
-                (*_dataConnectionSocketMap)[port] = fd;
+            std::shared_ptr<FTPConnectionBase> connectionToStart;
+            {
+                auto lk = std::lock_guard(*_dataConnectionQueueMutex);
+                //The queue is now locked, we can thread-safely enqueue the connection.
+                if (!_dataConnectionSocketMap->contains(port)) {
+                    int fd;
+                    do {
+                        fd = socket(AF_INET, SOCK_STREAM, 0);
+                    } while (fd == -1);
+                    sockaddr_in addr;
+                    addr.sin_family = AF_INET;
+                    addr.sin_port = port;
+                    addr.sin_addr = _localAddr.sin_addr;
+                    if (bind(fd, reinterpret_cast<sockaddr *>(&addr), sizeof(addr)))
+                        throw std::system_error(errno, std::system_category());
+                    listen(fd, 20);
+                    (*_dataConnectionSocketMap)[port] = fd;
+                }
+                connection->_localAddr.sin_port = port;
+                if ((*_dataConnectionQueue)[port].size() > 0) {
+                    (*_dataConnectionQueue)[port].push(connection);
+                    connectionToStart = (*_dataConnectionQueue)[port].front();
+                    (*_dataConnectionQueue)[port].pop();
+                } else connectionToStart = std::move(connection);
             }
-            connection->_localAddr.sin_port = port;
-            (*_dataConnectionQueue)[port].push(connection);
-            if((*_dataConnectionQueue)[port].size() == 1)
-                //This is a single enqueued connection, we need to start it.
-                (*_dataConnectionQueue)[port].front()->start();
+            {
+                auto lk = std::lock_guard(*_childConnectionsMutex);
+                _childConnections.push_back(connectionToStart);
+            }
+            connectionToStart->start();
         }
 
         virtual ~FTPConnectionBase(){

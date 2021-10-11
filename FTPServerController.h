@@ -15,8 +15,8 @@ namespace mp {
     class FTPServerController: public FTPConnectionBase {
     public:
         //constructs the server, making it dispatch some path (by default, the current path) with given thread count.
-        FTPServerController(int fd, sockaddr_in localAddress, const std::filesystem::path &ftpRootPath = std::filesystem::current_path(), int threadCount = std::thread::hardware_concurrency()):
-                FTPConnectionBase(fd,
+        FTPServerController(sockaddr_in localAddress, const std::filesystem::path &ftpRootPath = std::filesystem::current_path(), int threadCount = std::thread::hardware_concurrency()):
+                FTPConnectionBase(0,
                                   std::make_shared<FTPConnectionQueueType>(),
                                   std::make_shared<std::map<int, int>>(),
                                   std::make_shared<std::mutex>(),
@@ -30,31 +30,36 @@ namespace mp {
         {
             if(!std::filesystem::exists(ftpRootPath))
                 throw std::runtime_error("Specified path does not exist");
-        }
-
-        //starts the server in current thread and locking it.
-        void start(){
-            connectionEstablishedCallback();
             _threadPool.executor().post([this](){
                 while(true) {
                     _threadPool.executor().post(_ring->check_act(), std::allocator<void>());
                 }
-                }, std::allocator<void>());
+            }, std::allocator<void>());
         }
-        //Server can be stopped by either call of the inherited stop() method or destruction.
 
-    private:
-
-        std::function<void(void)> connectionEstablishedCallback = [this](){
+        //starts the server in current thread and locking it.
+        void start() {
+            do {
+                _fd = socket(AF_INET, SOCK_STREAM, 0);
+            } while (_fd == -1);
+            if (bind(_fd, reinterpret_cast<sockaddr *>(&_localAddr), sizeof(_localAddr)))
+                throw std::system_error(errno, std::system_category());
+            listen(_fd, 20);
+            (*_dataConnectionSocketMap)[_localAddr.sin_port] = _fd;
             enqueueConnection(_localAddr.sin_port,
                               std::make_shared<FTPConnection>(
                                       std::shared_ptr<FTPConnectionBase>(reinterpret_cast<FTPConnectionBase*>(this)),
                                       std::move(_ftpRoot),
-                                      std::move(_fileSystem),
-                                      std::move(connectionEstablishedCallback)
-                                      )
-                                      );
+                                      std::move(_fileSystem)
+                              )
+            );
         };
+
+        //Server can be stopped by either call of the inherited stop() method or destruction.
+
+        void startActing() {};
+
+    private:
 
         boost::asio::thread_pool _threadPool;
         std::filesystem::path _ftpRoot;

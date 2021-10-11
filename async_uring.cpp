@@ -86,7 +86,7 @@ namespace mp{
                                  if (res < 0) {//something bad
                                      cb(res);
                                  } else { //successfully read some data, probably still have something to read
-                                     async_write(fd, std::move(data), len - res, cb, offset + res); //continue reading data
+                                     async_write(std::move(fd), std::move(data), len - res, cb, offset + res); //continue reading data
                                  }
                              }, offset);
         } else //read is complete
