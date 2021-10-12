@@ -17,9 +17,6 @@ namespace mp {
         //constructs the server, making it dispatch some path (by default, the current path) with given thread count.
         FTPServerController(sockaddr_in localAddress, const std::filesystem::path &ftpRootPath = std::filesystem::current_path(), int threadCount = std::thread::hardware_concurrency()):
                 FTPConnectionBase(0,
-                                  std::make_shared<FTPConnectionQueueType>(),
-                                  std::make_shared<std::map<int, int>>(),
-                                  std::make_shared<std::mutex>(),
                                   std::make_shared<std::mutex>(),
                                   localAddress,
                                   std::make_shared<uring_wrapper>(512)
@@ -38,15 +35,14 @@ namespace mp {
         }
 
         //starts the server in current thread and locking it.
-        void start() {
+        void start() override {
             do {
                 _fd = socket(AF_INET, SOCK_STREAM, 0);
             } while (_fd == -1);
             if (bind(_fd, reinterpret_cast<sockaddr *>(&_localAddr), sizeof(_localAddr)))
                 throw std::system_error(errno, std::system_category());
             listen(_fd, 20);
-            (*_dataConnectionSocketMap)[_localAddr.sin_port] = _fd;
-            enqueueConnection(_localAddr.sin_port,
+            enqueueConnection(_fd,
                               std::make_shared<FTPConnection>(
                                       std::shared_ptr<FTPConnectionBase>(reinterpret_cast<FTPConnectionBase*>(this)),
                                       std::move(_ftpRoot),
@@ -57,7 +53,7 @@ namespace mp {
 
         //Server can be stopped by either call of the inherited stop() method or destruction.
 
-        void startActing() {};
+        void startActing() override {};
 
     private:
 

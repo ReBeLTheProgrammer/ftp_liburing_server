@@ -168,7 +168,7 @@ class FTPFileSystem {
                 fileEntryPtr->_keyPath = relativePath;
                 fileEntryPtr->_truePath = file.path();
                 if(!_filesBeingEdited.contains(file.path())) {
-                    if (file.path() == _root / relativePath || file == files.back())
+                    if (file.path() != _root / relativePath && file != files.back())
                         remove(file.path().c_str());
                     else
                         _fileTable[relativePath].push_back(fileEntryPtr);
@@ -181,18 +181,12 @@ class FTPFileSystem {
     public:
         using FTPConnectionQueueType = std::map<int, std::queue<std::shared_ptr<FTPConnectionBase>>>;
         FTPConnectionBase(int fd,
-                          std::shared_ptr<FTPConnectionQueueType>&& dataConnectionQueue,
-                          std::shared_ptr<std::map<int, int>>&& dataConnectionSocketMap,
-                          std::shared_ptr<std::mutex>&& connectionQueueMutex,
                           std::shared_ptr<std::mutex>&& childConnectionsMutex,
                           sockaddr_in localAddr,
                           std::shared_ptr<uring_wrapper>&& ring,
                           std::function<void(void)>&& waitingForConnectionCallback = [](){}
                           ):
         _fd(fd),
-        _dataConnectionQueue(dataConnectionQueue),
-        _dataConnectionQueueMutex(connectionQueueMutex),
-        _dataConnectionSocketMap(dataConnectionSocketMap),
         _childConnectionsMutex(childConnectionsMutex),
         _parent(std::shared_ptr<FTPConnectionBase>()),
         _localAddr(localAddr),
@@ -203,9 +197,6 @@ class FTPFileSystem {
                           std::function<void(void)>&& waitingForConnectionCallback = [](){}
                           ):
                 _fd(parent->_fd),
-                _dataConnectionQueue(parent->_dataConnectionQueue),
-                _dataConnectionQueueMutex(parent->_dataConnectionQueueMutex),
-                _dataConnectionSocketMap(parent->_dataConnectionSocketMap),
                 _childConnectionsMutex(parent->_childConnectionsMutex),
                 _parent(parent),
                 _localAddr(parent->_localAddr),
@@ -222,15 +213,7 @@ class FTPFileSystem {
                     auto lk = std::lock_guard(m);
                     std::cout << "async_sock_accept() returned " << res << '\n';
                 }
-                //Connection accepted (with any result) - now we can clear ourself from queue and allow other connections to accept.
-                {
-                    auto lk = std::lock_guard(*_dataConnectionQueueMutex);
-                    if ((*_dataConnectionQueue)[_localAddr.sin_port].front().get() == this)
-                        (*_dataConnectionQueue)[_localAddr.sin_port].pop();
-                    if (!(*_dataConnectionQueue)[_localAddr.sin_port].empty())
-                        (*_dataConnectionQueue)[_localAddr.sin_port].front()->start();
-                }
-                if(_fd == -1){
+                if(_fd < 0){
                     //stop self
                     stop();
                 } else{
@@ -238,6 +221,14 @@ class FTPFileSystem {
                     startActing();
                 }
             });
+        }
+
+        sockaddr_in localAddr() const {
+            return _localAddr;
+        }
+
+        int fd() const noexcept{
+            return _fd;
         }
 
         //Kills the connection with all child connections.
@@ -250,37 +241,15 @@ class FTPFileSystem {
                 _parent->acceptChildStop(this);
         }
 
-        void enqueueConnection(int port, std::shared_ptr<FTPConnectionBase>&& connection){
-            std::shared_ptr<FTPConnectionBase> connectionToStart;
-            {
-                auto lk = std::lock_guard(*_dataConnectionQueueMutex);
-                //The queue is now locked, we can thread-safely enqueue the connection.
-                if (!_dataConnectionSocketMap->contains(port)) {
-                    int fd;
-                    do {
-                        fd = socket(AF_INET, SOCK_STREAM, 0);
-                    } while (fd == -1);
-                    sockaddr_in addr;
-                    addr.sin_family = AF_INET;
-                    addr.sin_port = port;
-                    addr.sin_addr = _localAddr.sin_addr;
-                    if (bind(fd, reinterpret_cast<sockaddr *>(&addr), sizeof(addr)))
-                        throw std::system_error(errno, std::system_category());
-                    listen(fd, 20);
-                    (*_dataConnectionSocketMap)[port] = fd;
-                }
-                connection->_localAddr.sin_port = port;
-                if ((*_dataConnectionQueue)[port].size() > 0) {
-                    (*_dataConnectionQueue)[port].push(connection);
-                    connectionToStart = (*_dataConnectionQueue)[port].front();
-                    (*_dataConnectionQueue)[port].pop();
-                } else connectionToStart = std::move(connection);
-            }
+        void enqueueConnection(int fd, std::shared_ptr<FTPConnectionBase>&& connection) {
+            socklen_t addrLen = sizeof(sockaddr_in);
+            getsockname(fd, reinterpret_cast<sockaddr*>(&_localAddr), &addrLen);
+            connection->_fd = fd;
             {
                 auto lk = std::lock_guard(*_childConnectionsMutex);
-                _childConnections.push_back(connectionToStart);
+                _childConnections.push_back(connection);
             }
-            connectionToStart->start();
+            connection->start();
         }
 
         virtual ~FTPConnectionBase(){
@@ -297,10 +266,7 @@ class FTPFileSystem {
         std::vector<std::shared_ptr<FTPConnectionBase>> _childConnections;
         std::shared_ptr<std::mutex> _childConnectionsMutex;
         std::shared_ptr<FTPConnectionBase> _parent;
-        std::shared_ptr<FTPConnectionQueueType> _dataConnectionQueue;
-        std::shared_ptr<std::map<int, int>> _dataConnectionSocketMap;
         std::function<void(void)> _waitingForConnectionCallback;
-        std::shared_ptr<std::mutex> _dataConnectionQueueMutex;
         std::shared_ptr<uring_wrapper> _ring;
 
         virtual void startActing() = 0;

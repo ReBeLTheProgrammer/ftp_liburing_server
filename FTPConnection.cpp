@@ -37,8 +37,6 @@ namespace mp{
      */
     std::filesystem::path parsePath(const std::filesystem::path& pwd, const std::filesystem::path& arg){
         std::filesystem::path res;
-        assert(!pwd.has_root_path());
-        assert(pwd.has_filename());
         if(arg.has_root_path())
             res = arg;
         else
@@ -59,12 +57,13 @@ namespace mp{
         }
         res.clear();
         for(const auto& token: tokens)
-            res /= token;
+            if(!res.empty() || !(token == "/"))
+                res /= token;
         return res;
     }
 
     void FTPConnection::startActing() {
-        enqueueConnection(_localAddr.sin_port,
+        enqueueConnection(_parent->fd(),
                           std::make_shared<FTPConnection>(
                                   std::move(_parent),
                                   std::move(_root),
@@ -83,8 +82,9 @@ namespace mp{
     void FTPConnection::processCommand(std::size_t commandLen) {
         if(commandLen < 0)
             stop();
-        ci_string controlSeq = _command->substr(0, _command->find(' ')).c_str(); // NOLINT(readability-redundant-string-cstr)
-        std::string commandField = _command->substr(_command->find(' ') + 1, _command->find("\r\n"));
+        ci_string controlSeq;
+        controlSeq = _command->substr(0, std::min(_command->find(' '), _command->find("\r\n"))).c_str(); // NOLINT(readability-redundant-string-cstr)
+        std::string commandField = _command->substr(_command->find(' ') + 1, _command->find("\r\n") - _command->find(' ') - 1);
         _command->erase(0, _command->find("\r\n") + 2);
         if(controlSeq == "USER"){
             _state->user(commandField);
@@ -94,8 +94,6 @@ namespace mp{
             _state->cdup();
         } else if (controlSeq == "QUIT"){
             _state->quit();
-        } else if (controlSeq == "PORT"){
-            _state->port(commandField);
         } else if (controlSeq == "TYPE"){
             _state->type(commandField);
         } else if (controlSeq == "STRU"){
@@ -112,9 +110,56 @@ namespace mp{
             _state->list(commandField);
         } else if (controlSeq == "NOOP"){
             _state->noop();
+        } else if (controlSeq == "PASV"){
+            _state->pasv();
         } else {
-            _ring->async_write(_fd, std::make_shared<std::string>("500 Incorrect Command\r\n"s), 25, defaultAsyncOpHandler);
+            _ring->async_write(_fd, std::make_shared<std::string>("500 Incorrect Command\r\n"s), 23, defaultAsyncOpHandler);
         }
+    }
+
+    void FTPConnection::makePasv() {
+        _pasvFD = socket(_localAddr.sin_family, SOCK_STREAM, 0);
+        _pasvAddr.sin_family = _localAddr.sin_family;
+        _pasvAddr.sin_addr = _localAddr.sin_addr;
+        _pasvAddr.sin_port = 0;
+        _pasvAddrLen = sizeof(_pasvAddr);
+        bind(_pasvFD, reinterpret_cast<sockaddr*>(&_pasvAddr), _pasvAddrLen);
+        listen(_pasvFD, 20);
+        getsockname(_pasvFD, reinterpret_cast<sockaddr*>(&_pasvAddr), &_pasvAddrLen);
+
+        std::uint32_t ip = ntohl(_pasvAddr.sin_addr.s_addr);
+        std::uint16_t port = ntohs(_pasvAddr.sin_port);
+        std::stringstream ss;
+        ss << "227 Entering Passive Mode ("
+           << ((ip & 0xFF000000) >> 24) << ","
+           << ((ip & 0xFF0000) >> 16) << ","
+           << ((ip & 0xFF00) >> 8) << ","
+           << (ip & 0xFF) << ","
+           << ((port & 0xFF00) >> 8) << ","
+           << (port & 0xFF) << ").\r\n";
+        auto connection = std::make_shared<FTPConnectionDataSender>(
+                std::shared_ptr<FTPConnectionBase>(reinterpret_cast<FTPConnectionBase*>(this)),
+                std::move(_fileSystem),
+                [](){}
+        );
+        _ring->async_write(
+                _fd,
+                std::make_shared<std::string>(ss.str()),
+                ss.str().size(),
+                [this, connection](int res) mutable {
+                    enqueueConnection(
+                            _pasvFD,
+                            std::move(connection)
+                    );
+                }
+        );
+        _currentPasvChild = connection;
+    }
+
+    void FTPConnection::postDataSendTask(std::filesystem::path&& path, ConnectionMode mode,
+                                         std::function<void()>&& dataTransferEndCallback) {
+        if(_currentPasvChild)
+            _currentPasvChild->command(std::move(path), mode, std::move(dataTransferEndCallback));
     }
 
     void FTPConnectionState::noop() const {
@@ -127,8 +172,16 @@ namespace mp{
     }
 
     void FTPConnectionStateNotLoggedIn::user(const std::string& username) {
-        if(username == "anonymous")
-            _handledConnection->switchState(std::make_unique<FTPConnectionStateLoggedIn>(std::move(_handledConnection)));
+        if(username == "anonymous") {
+            _handledConnection->ring()->async_write(
+                    _handledConnection->fd(),
+                    std::make_shared<std::string>("230 User Name OK\r\n"s),
+                    18,
+                    _handledConnection->defaultAsyncOpHandler
+            );
+            _handledConnection->switchState(
+                    std::make_unique<FTPConnectionStateLoggedIn>(std::move(_handledConnection)));
+        }
         else
             _handledConnection->ring()->async_write(
                     _handledConnection->fd(),
@@ -147,6 +200,14 @@ namespace mp{
                     _handledConnection->defaultAsyncOpHandler
             );
             _handledConnection->switchState(std::make_unique<FTPConnectionStateNotLoggedIn>(std::move(_handledConnection)));
+        } else {
+            _handledConnection->ring()->async_write(
+                    _handledConnection->fd(),
+                    std::make_shared<std::string>("230 User Name OK\r\n"s),
+                    18,
+                    _handledConnection->defaultAsyncOpHandler
+            );
+            _handledConnection->switchState(std::make_unique<FTPConnectionStateLoggedIn>(std::move(_handledConnection)));
         }
     }
 
@@ -324,31 +385,31 @@ namespace mp{
                         _handledConnection->defaultAsyncOpHandler
                 );
             else{
-                _handledConnection->enqueueConnection(
-                        _handledConnection->port(),
-                        std::make_shared<FTPConnectionDataSender>(
-                                std::shared_ptr<FTPConnectionBase>(reinterpret_cast<FTPConnectionBase*>(this)),
-                                std::move(_handledConnection->fileSystem()),
-                                std::move(path),
-                                FTPConnectionDataSender::ConnectionMode::sender,
-                                [this](){
-                                    _handledConnection->ring()->async_write(
-                                            _handledConnection->fd(),
-                                            std::make_shared<std::string>("226 File Transfer Successful\r\n"s),
-                                            30,
-                                            _handledConnection->defaultAsyncOpHandler
-                                    );
-                                },
-                                [this](){
-                                    _handledConnection->ring()->async_write(
-                                            _handledConnection->fd(),
-                                            std::make_shared<std::string>("150 Opened data connection\r\n"s),
-                                            28,
-                                            [](std::int64_t fd){}
-                                    );
-                                }
-                        )
-                );
+#warning re-implement me
+//                std::shared_ptr<FTPConnectionDataSender> connection;
+//                connection = std::make_shared<FTPConnectionDataSender>(
+//                        std::shared_ptr<FTPConnectionBase>(reinterpret_cast<FTPConnectionBase*>(this)),
+//                        std::move(_handledConnection->fileSystem()),
+//                        std::move(path),
+//                        FTPConnectionDataSender::ConnectionMode::sender,
+//                        [this](){
+//                            _handledConnection->ring()->async_write(
+//                                    _handledConnection->fd(),
+//                                    std::make_shared<std::string>("226 File Transfer Successful\r\n"s),
+//                                    30,
+//                                    _handledConnection->defaultAsyncOpHandler
+//                            );
+//                        },
+//                        [this](){
+//                            _handledConnection->ring()->async_write(
+//                                    _handledConnection->fd(),
+//                                    std::make_shared<std::string>("150 Opened data connection\r\n"s),
+//                                    28,
+//                                    [](std::int64_t res){}
+//                            );
+//                        }
+//                );
+//                _handledConnection->enqueueConnection(_handledConnection->pasvFD(), connection);
             }
         }
     }
@@ -393,40 +454,39 @@ namespace mp{
                         _handledConnection->defaultAsyncOpHandler
                 );
             else{
-                _handledConnection->enqueueConnection(
-                        _handledConnection->port(),
-                        std::make_shared<FTPConnectionDataSender>(
-                                std::shared_ptr<FTPConnectionBase>(reinterpret_cast<FTPConnectionBase*>(this)),
-                                std::move(_handledConnection->fileSystem()),
-                                std::move(path),
-                                FTPConnectionDataSender::ConnectionMode::receiver,
-                                [this](){
-                                    _handledConnection->ring()->async_write(
-                                            _handledConnection->fd(),
-                                            std::make_shared<std::string>("226 File Transfer Successful\r\n"s),
-                                            30,
-                                            _handledConnection->defaultAsyncOpHandler
-                                    );
-                                },
-                                [this](){
-                                    _handledConnection->ring()->async_write(
-                                            _handledConnection->fd(),
-                                            std::make_shared<std::string>("150 Opened data connection\r\n"s),
-                                            28,
-                                            [](std::int64_t fd){}
-                                    );
-                                }
-                        )
-                );
+#warning re-implement me
+//                std::shared_ptr<FTPConnectionDataSender> connection;
+//                connection = std::make_shared<FTPConnectionDataSender>(
+//                        std::shared_ptr<FTPConnectionBase>(reinterpret_cast<FTPConnectionBase*>(this)),
+//                        std::move(_handledConnection->fileSystem()),
+//                        [this](){
+//                            _handledConnection->ring()->async_write(
+//                                    _handledConnection->fd(),
+//                                    std::make_shared<std::string>("226 File Transfer Successful\r\n"s),
+//                                    30,
+//                                    _handledConnection->defaultAsyncOpHandler
+//                            );
+//                        },
+//                        [this](){
+//                            _handledConnection->ring()->async_write(
+//                                    _handledConnection->fd(),
+//                                    std::make_shared<std::string>("150 Opened data connection\r\n"s),
+//                                    28,
+//                                    [](std::int64_t res){}
+//                            );
+//                        }
+//                );
+//                _handledConnection->enqueueConnection(_handledConnection->pasvFD(), connection);
             }
         }
     }
     
     void FTPConnectionStateLoggedIn::pwd() const {
+        std::filesystem::path path = "/"/_handledConnection->pwd();
         _handledConnection->ring()->async_write(
                 _handledConnection->fd(),
-                std::make_shared<std::string>("200 Current directory is "s + _handledConnection->pwd().string() + "\r\n"s),
-                27 + _handledConnection->pwd().string().size(),
+                std::make_shared<std::string>("200 "s + path.string() + "\r\n"s),
+                6 + path.string().size(),
                 _handledConnection->defaultAsyncOpHandler
                 );
     }
@@ -446,16 +506,21 @@ namespace mp{
             return;
         }
         if(std::filesystem::is_directory(_handledConnection->root()/path)) {
-            for (auto &item: std::filesystem::directory_iterator(_handledConnection->root() / path)) {
-                listing += "250-" + item.path().filename().string() + "\r\n";
-            }
-            listing += "250 Operation successful\r\n";
-            _handledConnection->ring()->async_write(
-                    _handledConnection->fd(),
-                    std::make_shared<std::string>(listing),
-                    listing.size(),
-                    _handledConnection->defaultAsyncOpHandler
-            );
+                _handledConnection->ring()->async_write(
+                        _handledConnection->fd(),
+                        std::make_shared<std::string>("150 Opened data connection\r\n"s),
+                        28,
+                        [this, path](int res) mutable {
+                            _handledConnection->postDataSendTask(std::move(path), ConnectionMode::lister, [this](){
+                            _handledConnection->ring()->async_write(
+                                    _handledConnection->fd(),
+                                    std::make_shared<std::string>("250 Operation successful\r\n"),
+                                    26,
+                                    _handledConnection->defaultAsyncOpHandler
+                            );
+                        });}
+                );
+
         }
         else
             _handledConnection->ring()->async_write(
@@ -464,5 +529,27 @@ namespace mp{
                     39,
                     _handledConnection->defaultAsyncOpHandler
             );
+    }
+
+    void FTPConnectionStateLoggedIn::pasv() {
+        _handledConnection->makePasv();
+    }
+
+    void FTPConnectionDataSender::command(path &&pathToFile, ConnectionMode mode,
+                                          std::function<void()> &&dataTransmissionEndCallback) {
+        _pathToFile = pathToFile;
+        _mode = mode;
+        _dataTransmissionEndCallback = dataTransmissionEndCallback;
+
+        if(_mode == ConnectionMode::sender)
+            _fileFd = _fileSystem->open(_pathToFile, FTPFileSystem::OpenMode::readonly);
+        else if (_mode == ConnectionMode::receiver)
+            _fileFd = _fileSystem->open(_pathToFile, FTPFileSystem::OpenMode::writeonly);
+        else {
+            _fileStruct = popen(("ls -l " + _pathToFile.string()).c_str(), "r");
+            _fileFd = _fileStruct->_fileno;
+        }
+        //Now we have opened the requested file and need to start the connection session
+        continue_transmission(0);
     }
 }

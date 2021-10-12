@@ -126,7 +126,7 @@ int main() {
     sockaddr_in address;
     address.sin_family = AF_INET;
     address.sin_port = 25554;
-    address.sin_addr.s_addr = INADDR_ANY;
+    address.sin_addr.s_addr = inet_addr("192.168.178.36");
     auto controller = mp::FTPServerController(address);
     controller.start();
     char c;
