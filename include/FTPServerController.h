@@ -4,9 +4,7 @@
 #include <string>
 #include <thread>
 #include <memory>
-#include "async_uring.h"
-#include "FTPConnection.h"
-#include "FTPCommon.h"
+#include <FTPConnection.h>
 #include <boost/asio/thread_pool.hpp>
 #include <boost/intrusive/set.hpp>
 
@@ -17,7 +15,6 @@ namespace mp {
         //constructs the server, making it dispatch some path (by default, the current path) with given thread count.
         FTPServerController(sockaddr_in localAddress, const std::filesystem::path &ftpRootPath = std::filesystem::current_path(), int threadCount = std::thread::hardware_concurrency()):
                 FTPConnectionBase(0,
-                                  std::make_shared<std::mutex>(),
                                   localAddress,
                                   std::make_shared<uring_wrapper>(512)
                                   ),
@@ -44,7 +41,7 @@ namespace mp {
             listen(_fd, 20);
             enqueueConnection(_fd,
                               std::make_shared<FTPConnection>(
-                                      std::shared_ptr<FTPConnectionBase>(reinterpret_cast<FTPConnectionBase*>(this)),
+                                      this,
                                       std::move(_ftpRoot),
                                       std::move(_fileSystem)
                               )

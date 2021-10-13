@@ -1,11 +1,10 @@
-#include "async_uring.h"
 #include <fcntl.h>
 #include <iostream>
 #include <unistd.h>
 #include <algorithm>
 #include <mutex>
 #include <boost/asio/thread_pool.hpp>
-#include "FTPServerController.h"
+#include <FTPServerController.h>
 
 std::mutex m;
 //
@@ -131,5 +130,6 @@ int main() {
     controller.start();
     char c;
     std::cin >> c;
+    controller.stop();
     return 0;
 }
