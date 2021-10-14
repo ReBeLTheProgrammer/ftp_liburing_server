@@ -141,6 +141,7 @@ namespace mp {
         int _fileFd;
         FILE* _fileStruct;
         std::shared_ptr<std::string> _buffer;
+        std::uint64_t _bytesRead;
     };
 
 }

@@ -53,12 +53,7 @@ namespace mp {
         void enqueueConnection(int fd, std::shared_ptr<FTPConnectionBase>&& connection);
 
         virtual ~FTPConnectionBase(){
-            if(_fd > -1){
-                close(_fd);
-                auto lk = std::lock_guard(_childConnectionsMutex);
-                for (auto &child: _childConnections)
-                    child->stop();
-            }
+            FTPConnectionBase::stop();
         }
 
     protected:

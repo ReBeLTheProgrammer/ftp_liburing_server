@@ -22,11 +22,20 @@ void mp::FTPConnectionBase::start() {
 
 void mp::FTPConnectionBase::stop() {
     {
-        auto lk = std::lock_guard(_childConnectionsMutex);
-        for (auto &child: _childConnections)
+        std::shared_ptr<FTPConnectionBase> child;
+        while(!_childConnections.empty()){
+            {
+                auto lk = std::lock_guard(_childConnectionsMutex);
+                child = _childConnections.back();
+                _childConnections.pop_back();
+            }
+            child->_parent = nullptr;
             child->stop();
-        close(_fd);
-        _fd = -1;
+        }
+        if(_fd > -1) {
+            close(_fd);
+            _fd = -1;
+        }
     }
     if(_parent)
         _parent->acceptChildStop(this);
@@ -46,10 +55,5 @@ void mp::FTPConnectionBase::enqueueConnection(int fd, std::shared_ptr<FTPConnect
 void mp::FTPConnectionBase::acceptChildStop(mp::FTPConnectionBase *child) {
     //Adding thread-safety
     auto lk = std::lock_guard(_childConnectionsMutex);
-    _childConnections.erase(
-            std::find_if(
-                    _childConnections.begin(),
-                    _childConnections.end(),
-                    [child](const auto& el){return el.get() == child;})
-                    );
+    std::erase_if( _childConnections,[child](const auto& el){return el.get() == child;});
 }

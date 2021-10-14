@@ -94,7 +94,7 @@ namespace mp{
 
     void FTPConnection::makePasv() {
          int _pasvFD = socket(_localAddr.sin_family, SOCK_STREAM, 0);
-         struct sockaddr_in _pasvAddr;
+         struct sockaddr_in _pasvAddr{};
          socklen_t _pasvAddrLen;
         _pasvAddr.sin_family = _localAddr.sin_family;
         _pasvAddr.sin_addr = _localAddr.sin_addr;
@@ -146,6 +146,7 @@ namespace mp{
         _pathToFile = pathToFile;
         _mode = mode;
         _dataTransmissionEndCallback = dataTransmissionEndCallback;
+        _bytesRead = 0;
 
         if(_mode == ConnectionMode::sender)
             _fileFd = _fileSystem->open(_pathToFile, FTPFileSystem::OpenMode::readonly);
@@ -159,6 +160,8 @@ namespace mp{
         continue_transmission(0);
     }
 
+#pragma clang diagnostic push
+#pragma ide diagnostic ignored "VirtualCallInCtorOrDtor"
     FTPConnectionDataSender::FTPConnectionDataSender(FTPConnectionBase* parent,
                                                      std::shared_ptr<FTPFileSystem> &&fileSystem,
                                                      std::function<void(void)> &&waitingForConnectionCallback):
@@ -183,7 +186,8 @@ namespace mp{
                     _ring->async_read_some(_fileFd, std::move(_buffer), [this](int res){
                         if(res > 0){
                             //read from file successful
-                            _buffer->resize(_buffer->find_last_not_of(static_cast<char>(0)) + 1);
+                            _buffer->resize(res);
+                            _bytesRead += res;
                             _ring->async_write_some(_fd, std::move(_buffer), continue_transmission);
                         } else {
                             //read from file failed - eof reached
@@ -191,13 +195,14 @@ namespace mp{
                             _dataTransmissionEndCallback();
                             stop();
                         }
-                    });
+                    }, _bytesRead);
                 } else if(_mode == ConnectionMode::receiver) {
                     _ring->async_read_some(_fd, std::move(_buffer), [this](int res){
                         if(res > 0){
                             //read from socket successful
-                            _buffer->resize(_buffer->find_last_not_of(static_cast<char>(0)) + 1);
-                            _ring->async_write_some(_fileFd, std::move(_buffer), continue_transmission);
+                            _buffer->resize(res);
+                            _bytesRead += res;
+                            _ring->async_write_some(_fileFd, std::move(_buffer), continue_transmission, _bytesRead);
                         } else {
                             //read from socket failed - connection closed
                             _fileSystem->close(_fileFd);
@@ -226,4 +231,5 @@ namespace mp{
             }
         };
     }
+#pragma clang diagnostic pop
 }

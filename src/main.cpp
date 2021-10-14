@@ -127,7 +127,13 @@ int main() {
     address.sin_port = 25554;
     address.sin_addr.s_addr = inet_addr("192.168.178.36");
     auto controller = mp::FTPServerController(address);
-    controller.start();
+    try {
+        controller.start();
+    } catch(std::exception& e){
+        std::cerr << "Caught an exception on controller.start():" << e.what() << '\n';
+        controller.stop();
+        return 1;
+    }
     char c;
     std::cin >> c;
     controller.stop();

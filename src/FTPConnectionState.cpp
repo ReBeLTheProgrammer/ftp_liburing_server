@@ -67,7 +67,7 @@ namespace mp{
                     _handledConnection->defaultAsyncOpHandler
             );
             _handledConnection->switchState(
-                    std::make_unique<FTPConnectionStateLoggedIn>(std::move(_handledConnection)));
+                    std::make_unique<FTPConnectionStateLoggedIn>(_handledConnection));
         }
         else
             _handledConnection->ring()->async_write(
@@ -86,7 +86,7 @@ namespace mp{
                     25,
                     _handledConnection->defaultAsyncOpHandler
             );
-            _handledConnection->switchState(std::make_unique<FTPConnectionStateNotLoggedIn>(std::move(_handledConnection)));
+            _handledConnection->switchState(std::make_unique<FTPConnectionStateNotLoggedIn>(_handledConnection));
         } else {
             _handledConnection->ring()->async_write(
                     _handledConnection->fd(),
@@ -94,7 +94,7 @@ namespace mp{
                     18,
                     _handledConnection->defaultAsyncOpHandler
             );
-            _handledConnection->switchState(std::make_unique<FTPConnectionStateLoggedIn>(std::move(_handledConnection)));
+            _handledConnection->switchState(std::make_unique<FTPConnectionStateLoggedIn>(_handledConnection));
         }
     }
 
@@ -268,31 +268,20 @@ namespace mp{
                         _handledConnection->defaultAsyncOpHandler
                 );
             else{
-#warning re-implement me
-//                std::shared_ptr<FTPConnectionDataSender> connection;
-//                connection = std::make_shared<FTPConnectionDataSender>(
-//                        std::shared_ptr<FTPConnectionBase>(reinterpret_cast<FTPConnectionBase*>(this)),
-//                        std::move(_handledConnection->fileSystem()),
-//                        std::move(path),
-//                        FTPConnectionDataSender::ConnectionMode::sender,
-//                        [this](){
-//                            _handledConnection->ring()->async_write(
-//                                    _handledConnection->fd(),
-//                                    std::make_shared<std::string>("226 File Transfer Successful\r\n"s),
-//                                    30,
-//                                    _handledConnection->defaultAsyncOpHandler
-//                            );
-//                        },
-//                        [this](){
-//                            _handledConnection->ring()->async_write(
-//                                    _handledConnection->fd(),
-//                                    std::make_shared<std::string>("150 Opened data connection\r\n"s),
-//                                    28,
-//                                    [](std::int64_t res){}
-//                            );
-//                        }
-//                );
-//                _handledConnection->enqueueConnection(_handledConnection->pasvFD(), connection);
+                _handledConnection->ring()->async_write(
+                        _handledConnection->fd(),
+                        std::make_shared<std::string>("150 Opened data connection\r\n"s),
+                        28,
+                        [this, path](int res) mutable {
+                            _handledConnection->postDataSendTask(std::move(path), ConnectionMode::sender, [this](){
+                                _handledConnection->ring()->async_write(
+                                        _handledConnection->fd(),
+                                        std::make_shared<std::string>("250 Operation successful\r\n"),
+                                        26,
+                                        _handledConnection->defaultAsyncOpHandler
+                                );
+                            });}
+                );
             }
         }
     }
@@ -337,29 +326,20 @@ namespace mp{
                         _handledConnection->defaultAsyncOpHandler
                 );
             else{
-#warning re-implement me
-//                std::shared_ptr<FTPConnectionDataSender> connection;
-//                connection = std::make_shared<FTPConnectionDataSender>(
-//                        std::shared_ptr<FTPConnectionBase>(reinterpret_cast<FTPConnectionBase*>(this)),
-//                        std::move(_handledConnection->fileSystem()),
-//                        [this](){
-//                            _handledConnection->ring()->async_write(
-//                                    _handledConnection->fd(),
-//                                    std::make_shared<std::string>("226 File Transfer Successful\r\n"s),
-//                                    30,
-//                                    _handledConnection->defaultAsyncOpHandler
-//                            );
-//                        },
-//                        [this](){
-//                            _handledConnection->ring()->async_write(
-//                                    _handledConnection->fd(),
-//                                    std::make_shared<std::string>("150 Opened data connection\r\n"s),
-//                                    28,
-//                                    [](std::int64_t res){}
-//                            );
-//                        }
-//                );
-//                _handledConnection->enqueueConnection(_handledConnection->pasvFD(), connection);
+                _handledConnection->ring()->async_write(
+                        _handledConnection->fd(),
+                        std::make_shared<std::string>("150 Opened data connection\r\n"s),
+                        28,
+                        [this, path](int res) mutable {
+                            _handledConnection->postDataSendTask(std::move(path), ConnectionMode::receiver, [this](){
+                                _handledConnection->ring()->async_write(
+                                        _handledConnection->fd(),
+                                        std::make_shared<std::string>("250 Operation successful\r\n"),
+                                        26,
+                                        _handledConnection->defaultAsyncOpHandler
+                                );
+                            });}
+                );
             }
         }
     }

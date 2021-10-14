@@ -25,8 +25,8 @@ namespace mp {
             if(!std::filesystem::exists(ftpRootPath))
                 throw std::runtime_error("Specified path does not exist");
             _threadPool.executor().post([this](){
-                while(true) {
-                    _threadPool.executor().post(_ring->check_act(), std::allocator<void>());
+                while(_fd > -1) {
+                    _threadPool.executor().post( _ring->check_act(), std::allocator<void>());
                 }
             }, std::allocator<void>());
         }
@@ -49,6 +49,11 @@ namespace mp {
         };
 
         //Server can be stopped by either call of the inherited stop() method or destruction.
+
+        void stop() override {
+            FTPConnectionBase::stop();
+            _threadPool.stop();
+        }
 
         void startActing() override {};
 

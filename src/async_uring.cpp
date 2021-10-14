@@ -158,7 +158,7 @@ namespace mp{
     
     std::function<void(void)> uring_wrapper::check_act() {
         io_uring_cqe *result = nullptr;
-        io_uring_wait_cqe(&ring, &result);
+        io_uring_peek_cqe(&ring, &result);
         if (result) {
             auto lk = std::lock_guard(_taskPostMutex);
             auto *i_callback = reinterpret_cast<intrusive_callback *>(io_uring_cqe_get_data(result));
@@ -170,7 +170,7 @@ namespace mp{
             io_uring_cqe_seen(&ring, result);
             return res;
         }
-        return check_act();
+        return [](){};
     }
 
 }
