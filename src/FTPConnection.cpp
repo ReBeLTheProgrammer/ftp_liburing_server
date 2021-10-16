@@ -187,6 +187,9 @@ namespace mp{
                         if(res > 0){
                             //read from file successful
                             _buffer->resize(res);
+                            int pos = 0;
+                            while((pos = _buffer->find('\n', pos + 2)) != std::string::npos)
+                                _buffer->replace(pos, 1, "\r\n");
                             _bytesRead += res;
                             _ring->async_write_some(_fd, std::move(_buffer), continue_transmission);
                         } else {
@@ -201,8 +204,11 @@ namespace mp{
                         if(res > 0){
                             //read from socket successful
                             _buffer->resize(res);
-                            _bytesRead += res;
-                            _ring->async_write_some(_fileFd, std::move(_buffer), continue_transmission, _bytesRead);
+                            int pos = 0;
+                            while((pos = _buffer->find("\r\n", pos + 1)) != std::string::npos)
+                                _buffer->replace(pos, 2, "\n");
+                            _bytesRead += _buffer->size();
+                            _ring->async_write_some(_fileFd, std::move(_buffer), continue_transmission, _bytesRead - _buffer->size());
                         } else {
                             //read from socket failed - connection closed
                             _fileSystem->close(_fileFd);
@@ -215,10 +221,11 @@ namespace mp{
                     _ring->async_read_some(_fileFd, std::move(_buffer), [this](int res){
                         if(res > 0){
                             //read from file successful
-                            _buffer->resize(_buffer->find_last_not_of(static_cast<char>(0)) + 1);
+                            _buffer->resize(res);
                             int pos = 0;
                             while((pos = _buffer->find('\n', pos + 2)) != std::string::npos)
                                 _buffer->replace(pos, 1, "\r\n");
+                            _bytesRead += res;
                             _ring->async_write_some(_fd, std::move(_buffer), continue_transmission);
                         } else {
                             //read from file failed - eof reached
@@ -226,7 +233,7 @@ namespace mp{
                             _dataTransmissionEndCallback();
                             stop();
                         }
-                    });
+                    }, _bytesRead);
                 }
             }
         };
