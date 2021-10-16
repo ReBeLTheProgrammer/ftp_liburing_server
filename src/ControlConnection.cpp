@@ -172,7 +172,7 @@ namespace ftp{
             _buffer(std::make_shared<std::string>()){
         continue_transmission = [this](std::int64_t res){
             _buffer->clear();
-            _buffer->resize(500);
+            _buffer->resize(1400);
             if(res < 0){
                 //previous socket/file operation failed - assume it is closed.
                 if(_mode != DataConnectionMode::lister)
