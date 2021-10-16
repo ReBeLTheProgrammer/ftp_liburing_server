@@ -61,7 +61,8 @@ namespace mp {
                                         std::move(waitingForConnectionCallback)),
                                         _root(root),
                                         _fileSystem(fileSystem),
-                                        _command(std::make_shared<std::string>())
+                                        _command(std::make_shared<std::string>()),
+                                        _pasvFD(-1)
         {
             _command->clear();
             _command->reserve(500);
@@ -99,6 +100,12 @@ namespace mp {
             );
         };
 
+        void stop() override {
+            if(_pasvFD >= 0)
+                close(_pasvFD);
+            FTPConnectionBase::stop();
+        }
+
     protected:
 
         void startActing() override;
@@ -111,6 +118,7 @@ namespace mp {
         FTPRepresentationType _type;
         FTPFileStructure _structure;
         FTPTransferMode _mode;
+        int _pasvFD;
         std::shared_ptr<FTPConnectionDataSender> _currentPasvChild;
         std::shared_ptr<mp::FTPFileSystem> _fileSystem;
     };

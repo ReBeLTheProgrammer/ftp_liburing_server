@@ -8,8 +8,6 @@
 #include <FTPFileSystem.h>
 #include <async_uring.h>
 
-extern std::mutex m;
-
 namespace mp {
 
     class FTPConnectionBase{

@@ -259,30 +259,20 @@ namespace mp{
                     _handledConnection->defaultAsyncOpHandler
             );
         else{
-            int fd = _handledConnection->fileSystem()->open(path, FTPFileSystem::OpenMode::writeonly);
-            if(fd == -1)
-                _handledConnection->ring()->async_write(
-                        _handledConnection->fd(),
-                        std::make_shared<std::string>("550 Error opening the requested file\r\n"s),
-                        38,
-                        _handledConnection->defaultAsyncOpHandler
-                );
-            else{
-                _handledConnection->ring()->async_write(
-                        _handledConnection->fd(),
-                        std::make_shared<std::string>("150 Opened data connection\r\n"s),
-                        28,
-                        [this, path](int res) mutable {
-                            _handledConnection->postDataSendTask(std::move(path), ConnectionMode::sender, [this](){
-                                _handledConnection->ring()->async_write(
-                                        _handledConnection->fd(),
-                                        std::make_shared<std::string>("250 Operation successful\r\n"),
-                                        26,
-                                        _handledConnection->defaultAsyncOpHandler
-                                );
-                            });}
-                );
-            }
+            _handledConnection->ring()->async_write(
+                    _handledConnection->fd(),
+                    std::make_shared<std::string>("150 Opened data connection\r\n"s),
+                    28,
+                    [this, path](int res) mutable {
+                        _handledConnection->postDataSendTask(std::move(path), ConnectionMode::sender, [this](){
+                            _handledConnection->ring()->async_write(
+                                    _handledConnection->fd(),
+                                    std::make_shared<std::string>("250 Operation successful\r\n"),
+                                    26,
+                                    _handledConnection->defaultAsyncOpHandler
+                            );
+                        });}
+            );
         }
     }
 
@@ -317,30 +307,20 @@ namespace mp{
                     _handledConnection->defaultAsyncOpHandler
             );
         else{
-            int fd = _handledConnection->fileSystem()->open(path, FTPFileSystem::OpenMode::readonly);
-            if(fd == -1)
-                _handledConnection->ring()->async_write(
-                        _handledConnection->fd(),
-                        std::make_shared<std::string>("450 Error opening the requested file\r\n"s),
-                        38,
-                        _handledConnection->defaultAsyncOpHandler
-                );
-            else{
-                _handledConnection->ring()->async_write(
-                        _handledConnection->fd(),
-                        std::make_shared<std::string>("150 Opened data connection\r\n"s),
-                        28,
-                        [this, path](int res) mutable {
-                            _handledConnection->postDataSendTask(std::move(path), ConnectionMode::receiver, [this](){
-                                _handledConnection->ring()->async_write(
-                                        _handledConnection->fd(),
-                                        std::make_shared<std::string>("250 Operation successful\r\n"),
-                                        26,
-                                        _handledConnection->defaultAsyncOpHandler
-                                );
-                            });}
-                );
-            }
+            _handledConnection->ring()->async_write(
+                    _handledConnection->fd(),
+                    std::make_shared<std::string>("150 Opened data connection\r\n"s),
+                    28,
+                    [this, path](int res) mutable {
+                        _handledConnection->postDataSendTask(std::move(path), ConnectionMode::receiver, [this](){
+                            _handledConnection->ring()->async_write(
+                                    _handledConnection->fd(),
+                                    std::make_shared<std::string>("250 Operation successful\r\n"),
+                                    26,
+                                    _handledConnection->defaultAsyncOpHandler
+                            );
+                        });}
+            );
         }
     }
 

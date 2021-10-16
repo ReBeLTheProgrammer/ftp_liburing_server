@@ -93,7 +93,9 @@ namespace mp{
     }
 
     void FTPConnection::makePasv() {
-         int _pasvFD = socket(_localAddr.sin_family, SOCK_STREAM, 0);
+        if(_pasvFD >= 0)
+            close(_pasvFD);
+         _pasvFD = socket(_localAddr.sin_family, SOCK_STREAM, 0);
          struct sockaddr_in _pasvAddr{};
          socklen_t _pasvAddrLen;
         _pasvAddr.sin_family = _localAddr.sin_family;
@@ -123,7 +125,7 @@ namespace mp{
                 _fd,
                 std::make_shared<std::string>(ss.str()),
                 ss.str().size(),
-                [this, _pasvFD, connection](int res) mutable {
+                [this, connection](int res) mutable {
                     enqueueConnection(
                             _pasvFD,
                             std::move(connection)

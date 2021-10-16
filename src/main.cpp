@@ -6,7 +6,6 @@
 #include <boost/asio/thread_pool.hpp>
 #include <FTPServerController.h>
 
-std::mutex m;
 //
 //void check_async_io_some(std::shared_ptr<mp::uring_wrapper> ring){
 //    {

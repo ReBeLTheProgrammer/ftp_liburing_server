@@ -52,11 +52,6 @@ namespace mp{
     uring_wrapper::async_read(int fd, std::shared_ptr<std::string> &&data, std::size_t len, Callback cb,
                                   int offset) {
         static_assert(sizeof(decltype(*data->data())) == 1, "Buffer must have byte-sized elements.");
-        {
-            auto lk = std::lock_guard(m);
-            std::cout << "async_read() started\n";
-            std::cout << "async_read(): len = " << len << '\n';
-        }
         if (len > 0) { //This means we still need to read something
             async_read_some(fd, {reinterpret_cast<std::byte *>(data->data() + data->size() - len),
                                  static_cast<unsigned long>(len)}, std::move(data),
@@ -74,11 +69,6 @@ namespace mp{
     void uring_wrapper::async_write(int fd, std::shared_ptr<std::string> &&data, std::size_t len, Callback cb,
                                         int offset) {
         static_assert(sizeof(decltype(*data->data())) == 1, "Buffer must have byte-sized elements.");
-        {
-            auto lk = std::lock_guard(m);
-            std::cout << "async_write() started\n";
-            std::cout << "async_write(): len = " << len << '\n';
-        }
         if (len > 0) { //This means we still need to write something
             async_write_some(fd, {reinterpret_cast<const std::byte *>(data->data() + data->size() - len),
                                   static_cast<unsigned long>(len)}, std::move(data),

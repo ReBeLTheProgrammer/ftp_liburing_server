@@ -14,8 +14,6 @@
 #include <mutex>
 #include <iostream>
 
-extern std::mutex m;
-
 namespace mp{
 
     using Callback = std::function<void(std::int64_t)>;
