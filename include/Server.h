@@ -1,26 +1,26 @@
-#ifndef URING_TCP_SERVER_FTPSERVERCONTROLLER_H
-#define URING_TCP_SERVER_FTPSERVERCONTROLLER_H
+#ifndef URING_TCP_SERVER_SERVER_H
+#define URING_TCP_SERVER_SERVER_H
 
 #include <string>
 #include <thread>
 #include <memory>
-#include <FTPConnection.h>
+#include <ControlConnection.h>
 #include <boost/asio/thread_pool.hpp>
 #include <boost/intrusive/set.hpp>
 
-namespace mp {
+namespace ftp {
 
-    class FTPServerController: public FTPConnectionBase {
+    class Server: public ConnectionBase {
     public:
         //constructs the server, making it dispatch some path (by default, the current path) with given thread count.
-        FTPServerController(sockaddr_in localAddress, const std::filesystem::path &ftpRootPath = std::filesystem::current_path(), int threadCount = std::thread::hardware_concurrency()):
-                FTPConnectionBase(0,
-                                  localAddress,
-                                  std::make_shared<uring_wrapper>(512)
+        Server(sockaddr_in localAddress, const std::filesystem::path &ftpRootPath = std::filesystem::current_path(), int threadCount = std::thread::hardware_concurrency()):
+                ConnectionBase(0,
+                               localAddress,
+                               std::make_shared<AsyncUring>(1ULL << 12)
                                   ),
-                                  _ftpRoot(ftpRootPath),
-                                  _fileSystem(std::make_shared<FTPFileSystem>(ftpRootPath)),
-                                  _threadPool(threadCount)
+                _ftpRoot(ftpRootPath),
+                _fileSystem(std::make_shared<FileSystemProxy>(ftpRootPath)),
+                _threadPool(threadCount)
         {
             if(!std::filesystem::exists(ftpRootPath))
                 throw std::runtime_error("Specified path does not exist");
@@ -40,7 +40,7 @@ namespace mp {
                 throw std::system_error(errno, std::system_category());
             listen(_fd, 20);
             enqueueConnection(_fd,
-                              std::make_shared<FTPConnection>(
+                              std::make_shared<ControlConnection>(
                                       this,
                                       std::move(_ftpRoot),
                                       std::move(_fileSystem)
@@ -51,7 +51,7 @@ namespace mp {
         //Server can be stopped by either call of the inherited stop() method or destruction.
 
         void stop() override {
-            FTPConnectionBase::stop();
+            ConnectionBase::stop();
             _threadPool.stop();
         }
 
@@ -61,9 +61,9 @@ namespace mp {
 
         boost::asio::thread_pool _threadPool;
         std::filesystem::path _ftpRoot;
-        std::shared_ptr<mp::FTPFileSystem> _fileSystem;
+        std::shared_ptr<FileSystemProxy> _fileSystem;
     };
 
 }
 
-#endif //URING_TCP_SERVER_FTPSERVERCONTROLLER_H
+#endif //URING_TCP_SERVER_SERVER_H

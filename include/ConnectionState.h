@@ -2,19 +2,19 @@
 // Created by therbl on 8/8/21.
 //
 
-#ifndef URING_TCP_SERVER_FTPCONNECTIONSTATE_H
-#define URING_TCP_SERVER_FTPCONNECTIONSTATE_H
+#ifndef URING_TCP_SERVER_CONNECTIONSTATE_H
+#define URING_TCP_SERVER_CONNECTIONSTATE_H
 
-#include <FTPConnection.h>
+#include <ControlConnection.h>
 #include <string>
 
-namespace mp {
+namespace ftp {
 
     using namespace std::string_literals;
 
-    class FTPConnectionStateLoggedIn: public FTPConnectionState{
+    class ControlConnectionStateLoggedIn: public ControlConnectionState{
     public:
-        explicit FTPConnectionStateLoggedIn(FTPConnection* handledConnection): FTPConnectionState(handledConnection) {}
+        explicit ControlConnectionStateLoggedIn(ControlConnection* handledConnection): ControlConnectionState(handledConnection) {}
 
         void user(const std::string& username) final;
         void cwd(std::string path) final;
@@ -30,9 +30,9 @@ namespace mp {
         void list(std::filesystem::path path) const final;
     };
 
-    class FTPConnectionStateNotLoggedIn: public FTPConnectionState{
+    class ControlConnectionStateNotLoggedIn: public ControlConnectionState{
     public:
-        explicit FTPConnectionStateNotLoggedIn(FTPConnection* handledConnection): FTPConnectionState(handledConnection) {}
+        explicit ControlConnectionStateNotLoggedIn(ControlConnection* handledConnection): ControlConnectionState(handledConnection) {}
 
         void user(const std::string& username) final;
         void cwd(std::string path) final { defaultBehavior(); }
@@ -58,4 +58,4 @@ namespace mp {
     };
 }
 
-#endif //URING_TCP_SERVER_FTPCONNECTIONSTATE_H
+#endif //URING_TCP_SERVER_CONNECTIONSTATE_H

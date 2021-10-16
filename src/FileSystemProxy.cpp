@@ -1,8 +1,8 @@
-#include <FTPFileSystem.h>
+#include <FileSystemProxy.h>
 
-namespace mp {
+namespace ftp {
 
-    int FTPFileSystem::open(const std::filesystem::path &relativePath, FTPFileSystem::OpenMode mode) {
+    int FileSystemProxy::open(const std::filesystem::path &relativePath, FileSystemProxy::OpenMode mode) {
         assert(relativePath.has_filename());
         auto lk = std::lock_guard(_filesystemMutex);
         if (!_fileTable.contains(relativePath))
@@ -34,7 +34,7 @@ namespace mp {
         }
     }
 
-    void FTPFileSystem::close(int fd) {
+    void FileSystemProxy::close(int fd) {
         auto lk = std::lock_guard(_filesystemMutex);
         if (_fdTable.contains(fd)) {
             ::close(fd);
@@ -67,7 +67,7 @@ namespace mp {
         }
     }
 
-    void FTPFileSystem::loadFileTable(const std::filesystem::path &relPath) {
+    void FileSystemProxy::loadFileTable(const std::filesystem::path &relPath) {
 
         for (auto &item: directory_iterator(_root / relPath)) {
             if (item.is_directory() && item.path().filename() != ".tmp")
@@ -77,7 +77,7 @@ namespace mp {
         }
     }
 
-    void FTPFileSystem::updateFileTable(const std::filesystem::path &relativePath) {
+    void FileSystemProxy::updateFileTable(const std::filesystem::path &relativePath) {
         assert(relativePath.has_filename());
         assert(!relativePath.has_root_path());
         auto lk = std::lock_guard(_filesystemMutex);

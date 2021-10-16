@@ -1,12 +1,12 @@
-#include <FTPConnection.h>
-#include <FTPConnectionState.h>
+#include <ControlConnection.h>
+#include <ConnectionState.h>
 
 #include <memory>
 #include <cstdio>
 #include <filesystem>
 #include <cassert>
 
-namespace mp{
+namespace ftp{
 
     //GotW #29: реализуем case-insensitive строки
     struct ci_char_traits: public std::char_traits<char>{
@@ -29,15 +29,15 @@ namespace mp{
 
     using ci_string = std::basic_string<char, ci_char_traits>;
 
-    void FTPConnection::startActing() {
+    void ControlConnection::startActing() {
         _parent->enqueueConnection(_parent->fd(),
-                          std::make_shared<FTPConnection>(
+                          std::make_shared<ControlConnection>(
                                   _parent,
                                   std::move(_root),
                                   std::move(_fileSystem)
                           )
                           );
-        _state = std::make_unique<FTPConnectionStateNotLoggedIn>(this);
+        _state = std::make_unique<ControlConnectionStateNotLoggedIn>(this);
         _ring->async_write(
                 _fd,
                 std::make_shared<std::string>("220-Connection Established\r\n220-Note that this server accepts only\r\n220 anonymous access mode.\r\n"s),
@@ -46,7 +46,7 @@ namespace mp{
         );
     }
 
-    void FTPConnection::processCommand(std::size_t commandLen) {
+    void ControlConnection::processCommand(std::size_t commandLen) {
         if(commandLen < 0)
             stop();
         ci_string controlSeq;
@@ -92,7 +92,7 @@ namespace mp{
         }
     }
 
-    void FTPConnection::makePasv() {
+    void ControlConnection::makePasv() {
         if(_pasvFD >= 0)
             close(_pasvFD);
          _pasvFD = socket(_localAddr.sin_family, SOCK_STREAM, 0);
@@ -116,7 +116,7 @@ namespace mp{
            << (ip & 0xFF) << ","
            << ((port & 0xFF00) >> 8) << ","
            << (port & 0xFF) << ").\r\n";
-        auto connection = std::make_shared<FTPConnectionDataSender>(
+        auto connection = std::make_shared<DataConnection>(
                 this,
                 std::move(_fileSystem),
                 [](){}
@@ -136,24 +136,24 @@ namespace mp{
         _currentPasvChild = connection;
     }
 
-    void FTPConnection::postDataSendTask(std::filesystem::path&& path, ConnectionMode mode,
-                                         std::function<void()>&& dataTransferEndCallback) {
+    void ControlConnection::postDataSendTask(std::filesystem::path&& path, DataConnectionMode mode,
+                                             std::function<void()>&& dataTransferEndCallback) {
         if(_currentPasvChild)
             _currentPasvChild->command(std::move(path), mode, std::move(dataTransferEndCallback));
     }
 
 
-    void FTPConnectionDataSender::command(path &&pathToFile, ConnectionMode mode,
-                                          std::function<void()> &&dataTransmissionEndCallback) {
+    void DataConnection::command(path &&pathToFile, DataConnectionMode mode,
+                                 std::function<void()> &&dataTransmissionEndCallback) {
         _pathToFile = pathToFile;
         _mode = mode;
         _dataTransmissionEndCallback = dataTransmissionEndCallback;
         _bytesRead = 0;
 
-        if(_mode == ConnectionMode::sender)
-            _fileFd = _fileSystem->open(_pathToFile, FTPFileSystem::OpenMode::readonly);
-        else if (_mode == ConnectionMode::receiver)
-            _fileFd = _fileSystem->open(_pathToFile, FTPFileSystem::OpenMode::writeonly);
+        if(_mode == DataConnectionMode::sender)
+            _fileFd = _fileSystem->open(_pathToFile, FileSystemProxy::OpenMode::readonly);
+        else if (_mode == DataConnectionMode::receiver)
+            _fileFd = _fileSystem->open(_pathToFile, FileSystemProxy::OpenMode::writeonly);
         else {
             _fileStruct = popen(("ls -l " + _pathToFile.string()).c_str(), "r");
             _fileFd = _fileStruct->_fileno;
@@ -164,12 +164,10 @@ namespace mp{
 
 #pragma clang diagnostic push
 #pragma ide diagnostic ignored "VirtualCallInCtorOrDtor"
-    FTPConnectionDataSender::FTPConnectionDataSender(FTPConnectionBase* parent,
-                                                     std::shared_ptr<FTPFileSystem> &&fileSystem,
-                                                     std::function<void(void)> &&waitingForConnectionCallback):
-            FTPConnectionBase(parent,
-                              std::move(waitingForConnectionCallback)
-            ),
+    DataConnection::DataConnection(ConnectionBase* parent,
+                                   std::shared_ptr<FileSystemProxy> &&fileSystem,
+                                   std::function<void(void)> &&waitingForConnectionCallback):
+            ConnectionBase(parent),
             _fileSystem(fileSystem),
             _buffer(std::make_shared<std::string>()){
         continue_transmission = [this](std::int64_t res){
@@ -177,14 +175,14 @@ namespace mp{
             _buffer->resize(500);
             if(res < 0){
                 //previous socket/file operation failed - assume it is closed.
-                if(_mode != ConnectionMode::lister)
+                if(_mode != DataConnectionMode::lister)
                     _fileSystem->close(_fileFd);
                 else
                     pclose(_fileStruct);
                 _dataTransmissionEndCallback();
                 stop();
             } else {
-                if(_mode == ConnectionMode::sender){
+                if(_mode == DataConnectionMode::sender){
                     _ring->async_read_some(_fileFd, std::move(_buffer), [this](int res){
                         if(res > 0){
                             //read from file successful
@@ -201,7 +199,7 @@ namespace mp{
                             stop();
                         }
                     }, _bytesRead);
-                } else if(_mode == ConnectionMode::receiver) {
+                } else if(_mode == DataConnectionMode::receiver) {
                     _ring->async_read_some(_fd, std::move(_buffer), [this](int res){
                         if(res > 0){
                             //read from socket successful

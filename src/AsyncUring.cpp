@@ -2,17 +2,17 @@
 // Created by therbl on 10/11/21.
 //
 
-#include <async_uring.h>
+#include <AsyncUring.h>
 
-namespace mp{
-    void uring_wrapper::async_read_some(int fd, std::shared_ptr<std::string> &&data, Callback cb, int offset) {
+namespace ftp{
+    void AsyncUring::async_read_some(int fd, std::shared_ptr<std::string> &&data, Callback cb, int offset) {
         static_assert(sizeof(decltype(*data->data())) == 1, "Buffer must have byte-sized elements.");
         async_read_some(fd, std::span<std::byte>({reinterpret_cast<std::byte *>(data->data()), data->size()}),
                         std::move(data), std::move(cb), offset);
     }
     
-    void uring_wrapper::async_read_some(int fd, std::span<std::byte> data, std::shared_ptr<std::string> &&dataToKeep,
-                                            Callback cb, int offset) {
+    void AsyncUring::async_read_some(int fd, std::span<std::byte> data, std::shared_ptr<std::string> &&dataToKeep,
+                                     Callback cb, int offset) {
         auto lk = std::lock_guard(_taskPostMutex);
         io_uring_sqe *task = io_uring_get_sqe(&ring);
         io_uring_prep_read(task, fd, data.data(), data.size(), offset);
@@ -26,15 +26,15 @@ namespace mp{
         active_callbacks.push_back(*i_callback);
     }
     
-    void uring_wrapper::async_write_some(int fd, std::shared_ptr<std::string> &&data, Callback cb, int offset) {
+    void AsyncUring::async_write_some(int fd, std::shared_ptr<std::string> &&data, Callback cb, int offset) {
         static_assert(sizeof(decltype(*data->data())) == 1, "Buffer must have byte-sized elements.");
         async_write_some(fd, std::span<const std::byte>({reinterpret_cast<const std::byte *>(data->data()), data->size()}),
                          std::move(data), cb, offset);
     }
     
     void
-    uring_wrapper::async_write_some(int fd, std::span<const std::byte> data, std::shared_ptr<std::string> &&dataToKeep,
-                                        Callback cb, int offset) {
+    AsyncUring::async_write_some(int fd, std::span<const std::byte> data, std::shared_ptr<std::string> &&dataToKeep,
+                                 Callback cb, int offset) {
         auto lk = std::lock_guard(_taskPostMutex);
         io_uring_sqe *task = io_uring_get_sqe(&ring);
         io_uring_prep_write(task, fd, data.data(), data.size(), offset);
@@ -49,8 +49,8 @@ namespace mp{
     }
     
     void
-    uring_wrapper::async_read(int fd, std::shared_ptr<std::string> &&data, std::size_t len, Callback cb,
-                                  int offset) {
+    AsyncUring::async_read(int fd, std::shared_ptr<std::string> &&data, std::size_t len, Callback cb,
+                           int offset) {
         static_assert(sizeof(decltype(*data->data())) == 1, "Buffer must have byte-sized elements.");
         if (len > 0) { //This means we still need to read something
             async_read_some(fd, {reinterpret_cast<std::byte *>(data->data() + data->size() - len),
@@ -66,8 +66,8 @@ namespace mp{
             cb(offset);
     }
     
-    void uring_wrapper::async_write(int fd, std::shared_ptr<std::string> &&data, std::size_t len, Callback cb,
-                                        int offset) {
+    void AsyncUring::async_write(int fd, std::shared_ptr<std::string> &&data, std::size_t len, Callback cb,
+                                 int offset) {
         static_assert(sizeof(decltype(*data->data())) == 1, "Buffer must have byte-sized elements.");
         if (len > 0) { //This means we still need to write something
             async_write_some(fd, {reinterpret_cast<const std::byte *>(data->data() + data->size() - len),
@@ -83,8 +83,8 @@ namespace mp{
             cb(offset);
     }
     
-    void uring_wrapper::async_read_until(int fd, std::shared_ptr<std::string> &&data, const std::string &delim,
-                                             Callback cb, int offset) {
+    void AsyncUring::async_read_until(int fd, std::shared_ptr<std::string> &&data, const std::string &delim,
+                                      Callback cb, int offset) {
         async_read_until(fd, std::move(data), [delim](const std::string &d) {
             auto res = std::search(d.begin(), d.end(), std::default_searcher(delim.begin(), delim.end()));
             if (res == d.end())
@@ -94,8 +94,8 @@ namespace mp{
     }
     
     void
-    uring_wrapper::async_read_until(int fd, std::shared_ptr<std::string> &&data, Predicate pred, Callback cb,
-                                        int offset) {
+    AsyncUring::async_read_until(int fd, std::shared_ptr<std::string> &&data, Predicate pred, Callback cb,
+                                 int offset) {
         static_assert(sizeof(decltype(*data->data())) == 1, "Buffer must have byte-sized elements.");
         if (std::ptrdiff_t match_len = pred(*data); match_len > 0) {
             //if already got match, call back.
@@ -120,7 +120,8 @@ namespace mp{
                         }, offset);
     }
     
-    void uring_wrapper::async_sock_accept(int fd, sockaddr *addr, socklen_t *len, int flags, Callback cb) {
+    void AsyncUring::async_sock_accept(int fd, sockaddr *addr, socklen_t *len, int flags, Callback cb) {
+        auto lk = std::lock_guard(_taskPostMutex);
         io_uring_sqe *task = io_uring_get_sqe(&ring);
         io_uring_prep_accept(task, fd, addr, len, flags);
         auto *i_callback = new intrusive_callback(std::move(cb), std::shared_ptr<std::string>());
@@ -133,7 +134,8 @@ namespace mp{
         active_callbacks.push_back(*i_callback);
     }
     
-    void uring_wrapper::async_sock_connect(int fd, sockaddr *addr, socklen_t len, Callback cb) {
+    void AsyncUring::async_sock_connect(int fd, sockaddr *addr, socklen_t len, Callback cb) {
+        auto lk = std::lock_guard(_taskPostMutex);
         io_uring_sqe *task = io_uring_get_sqe(&ring);
         io_uring_prep_connect(task, fd, addr, len);
         auto *i_callback = new intrusive_callback(std::move(cb), std::shared_ptr<std::string>());
@@ -146,7 +148,7 @@ namespace mp{
         active_callbacks.push_back(*i_callback);
     }
     
-    std::function<void(void)> uring_wrapper::check_act() {
+    std::function<void(void)> AsyncUring::check_act() {
         io_uring_cqe *result = nullptr;
         io_uring_peek_cqe(&ring, &result);
         if (result) {

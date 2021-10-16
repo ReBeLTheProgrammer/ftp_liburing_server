@@ -2,8 +2,8 @@
 // Created by therbl on 10/13/21.
 //
 
-#ifndef URING_TCP_SERVER_FTPFILESYSTEM_H
-#define URING_TCP_SERVER_FTPFILESYSTEM_H
+#ifndef URING_TCP_SERVER_FILESYSTEMPROXY_H
+#define URING_TCP_SERVER_FILESYSTEMPROXY_H
 
 #include <string>
 #include <map>
@@ -14,18 +14,18 @@
 #include <mutex>
 #include <vector>
 
-namespace mp {
+namespace ftp {
 
     using namespace std::filesystem;
 
-    class FTPFileSystem {
+    class FileSystemProxy {
     public:
         enum class OpenMode {
             readonly,
             writeonly
         };
 
-        explicit FTPFileSystem(const path &path) {
+        explicit FileSystemProxy(const path &path) {
             assert(path.has_filename());
             assert(path.has_root_path());
             assert(exists(path));
@@ -42,7 +42,7 @@ namespace mp {
 
         void close(int fd);
 
-        ~FTPFileSystem() {
+        ~FileSystemProxy() {
             //Before the destruction of filesystem, it copies all the latest versions of files to their target
             //destinations, dropping the ones that are outdated.
             for (const auto &it: _fileTable) {
@@ -78,4 +78,4 @@ namespace mp {
 
 }
 
-#endif //URING_TCP_SERVER_FTPFILESYSTEM_H
+#endif //URING_TCP_SERVER_FILESYSTEMPROXY_H

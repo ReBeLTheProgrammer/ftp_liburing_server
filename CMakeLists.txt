@@ -3,12 +3,12 @@ project(uring_tcp_server)
 
 add_executable(uring_tcp_server
         src/main.cpp
-        src/async_uring.cpp
-        src/FTPServerController.cpp
-        src/FTPConnection.cpp
-        src/FTPConnectionState.cpp
-        src/FTPFileSystem.cpp
-        src/FTPCommon.cpp)
+        src/AsyncUring.cpp
+        src/Server.cpp
+        src/ControlConnection.cpp
+        src/ConnectionState.cpp
+        src/FileSystemProxy.cpp
+        src/Common.cpp)
 
 target_include_directories(${PROJECT_NAME} PUBLIC include/)
 

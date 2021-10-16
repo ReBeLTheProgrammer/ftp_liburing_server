@@ -1,8 +1,8 @@
-#include <FTPConnectionState.h>
-#include <FTPConnection.h>
+#include <ConnectionState.h>
+#include <ControlConnection.h>
 
 
-namespace mp{
+namespace ftp{
 
     /**
      * @brief This function processes the path from _arg given by user and returns the full path if it is root-safe. Transitions to .tmp directories are also prohibited.
@@ -38,7 +38,7 @@ namespace mp{
         return res;
     }
 
-    void FTPConnectionState::noop() const {
+    void ControlConnectionState::noop() const {
         _handledConnection->ring()->async_write(
                 _handledConnection->fd(),
                 std::make_shared<std::string>("200 Ok\r\n"s),
@@ -47,7 +47,7 @@ namespace mp{
         );
     }
 
-    void FTPConnectionState::quit() {
+    void ControlConnectionState::quit() {
         _handledConnection->ring()->async_write(
                 _handledConnection->fd(),
                 std::make_shared<std::string>("221 Bye\r\n"s),
@@ -58,7 +58,7 @@ namespace mp{
                 );
     }
 
-    void FTPConnectionStateNotLoggedIn::user(const std::string& username) {
+    void ControlConnectionStateNotLoggedIn::user(const std::string& username) {
         if(username == "anonymous") {
             _handledConnection->ring()->async_write(
                     _handledConnection->fd(),
@@ -67,7 +67,7 @@ namespace mp{
                     _handledConnection->defaultAsyncOpHandler
             );
             _handledConnection->switchState(
-                    std::make_unique<FTPConnectionStateLoggedIn>(_handledConnection));
+                    std::make_unique<ControlConnectionStateLoggedIn>(_handledConnection));
         }
         else
             _handledConnection->ring()->async_write(
@@ -78,7 +78,7 @@ namespace mp{
             );
     }
 
-    void FTPConnectionStateLoggedIn::user(const std::string& username) {
+    void ControlConnectionStateLoggedIn::user(const std::string& username) {
         if(username != "anonymous") {
             _handledConnection->ring()->async_write(
                     _handledConnection->fd(),
@@ -86,7 +86,7 @@ namespace mp{
                     25,
                     _handledConnection->defaultAsyncOpHandler
             );
-            _handledConnection->switchState(std::make_unique<FTPConnectionStateNotLoggedIn>(_handledConnection));
+            _handledConnection->switchState(std::make_unique<ControlConnectionStateNotLoggedIn>(_handledConnection));
         } else {
             _handledConnection->ring()->async_write(
                     _handledConnection->fd(),
@@ -94,11 +94,11 @@ namespace mp{
                     18,
                     _handledConnection->defaultAsyncOpHandler
             );
-            _handledConnection->switchState(std::make_unique<FTPConnectionStateLoggedIn>(_handledConnection));
+            _handledConnection->switchState(std::make_unique<ControlConnectionStateLoggedIn>(_handledConnection));
         }
     }
 
-    void FTPConnectionStateLoggedIn::cwd(std::string path) {
+    void ControlConnectionStateLoggedIn::cwd(std::string path) {
         std::filesystem::path fullPath;
         try {
             path = parsePath(_handledConnection->pwd(), path);
@@ -138,7 +138,7 @@ namespace mp{
         }
     }
 
-    void FTPConnectionStateLoggedIn::cdup() {
+    void ControlConnectionStateLoggedIn::cdup() {
         auto& pwd = _handledConnection->pwd();
         if(!pwd.empty()) {
             pwd = pwd.parent_path();
@@ -156,18 +156,18 @@ namespace mp{
             );
     }
 
-    void FTPConnectionStateLoggedIn::port(const std::string& hostPort){
+    void ControlConnectionStateLoggedIn::port(const std::string& hostPort){
         _handledConnection->ring()->async_write(_handledConnection->fd(),
                                                 std::make_shared<std::string>("500 Command unavailable\r\n"s),
                                                 25,
                                                 _handledConnection->defaultAsyncOpHandler);
     }
 
-    void FTPConnectionStateLoggedIn::type(const std::string& typeCode) {
+    void ControlConnectionStateLoggedIn::type(const std::string& typeCode) {
         if(
-                typeCode == std::string{static_cast<char>(FTPRepresentationType::ASCII)} ||
-                typeCode == std::string{static_cast<char>(FTPRepresentationType::ASCII)}
-                            + static_cast<char>(FTPRepresentationType::NonPrint)
+                typeCode == std::string{static_cast<char>(RepresentationType::ASCII)} ||
+                typeCode == std::string{static_cast<char>(RepresentationType::ASCII)}
+                            + static_cast<char>(RepresentationType::NonPrint)
                 )
             //Do nothing and print
             _handledConnection->ring()->async_write(
@@ -184,17 +184,17 @@ namespace mp{
             );
     }
 
-    void FTPConnectionStateLoggedIn::stru(const std::string& structureCode) {
-        if(structureCode == std::string{static_cast<char>(FTPFileStructure::File)}){
-            _handledConnection->setStructure(FTPFileStructure::File);
+    void ControlConnectionStateLoggedIn::stru(const std::string& structureCode) {
+        if(structureCode == std::string{static_cast<char>(FileStructure::File)}){
+            _handledConnection->setStructure(FileStructure::File);
             _handledConnection->ring()->async_write(
                     _handledConnection->fd(),
                     std::make_shared<std::string>("200 Structure changed\r\n"s),
                     23,
                     _handledConnection->defaultAsyncOpHandler
             );
-        } else if(structureCode == std::string{static_cast<char>(FTPFileStructure::Record)}){
-            _handledConnection->setStructure(FTPFileStructure::Record);
+        } else if(structureCode == std::string{static_cast<char>(FileStructure::Record)}){
+            _handledConnection->setStructure(FileStructure::Record);
             _handledConnection->ring()->async_write(
                     _handledConnection->fd(),
                     std::make_shared<std::string>("200 Structure changed\r\n"s),
@@ -211,8 +211,8 @@ namespace mp{
         }
     }
 
-    void FTPConnectionStateLoggedIn::mode(const std::string& modeCode) {
-        if(modeCode == std::string{static_cast<char>(FTPTransferMode::Stream)})
+    void ControlConnectionStateLoggedIn::mode(const std::string& modeCode) {
+        if(modeCode == std::string{static_cast<char>(TransferMode::Stream)})
             //Do nothing and write
             _handledConnection->ring()->async_write(
                     _handledConnection->fd(),
@@ -228,7 +228,7 @@ namespace mp{
             );
     }
 
-    void FTPConnectionStateLoggedIn::retr(std::filesystem::path path) {
+    void ControlConnectionStateLoggedIn::retr(std::filesystem::path path) {
         //Retrieve operation is allowed only on files.
         std::string fullPath;
         try {
@@ -264,7 +264,7 @@ namespace mp{
                     std::make_shared<std::string>("150 Opened data connection\r\n"s),
                     28,
                     [this, path](int res) mutable {
-                        _handledConnection->postDataSendTask(std::move(path), ConnectionMode::sender, [this](){
+                        _handledConnection->postDataSendTask(std::move(path), DataConnectionMode::sender, [this](){
                             _handledConnection->ring()->async_write(
                                     _handledConnection->fd(),
                                     std::make_shared<std::string>("250 Operation successful\r\n"),
@@ -276,7 +276,7 @@ namespace mp{
         }
     }
 
-    void FTPConnectionStateLoggedIn::stor(std::filesystem::path path) {
+    void ControlConnectionStateLoggedIn::stor(std::filesystem::path path) {
         //Stor operation is allowed only on existing files.
         std::string fullPath;
         try {
@@ -312,7 +312,7 @@ namespace mp{
                     std::make_shared<std::string>("150 Opened data connection\r\n"s),
                     28,
                     [this, path](int res) mutable {
-                        _handledConnection->postDataSendTask(std::move(path), ConnectionMode::receiver, [this](){
+                        _handledConnection->postDataSendTask(std::move(path), DataConnectionMode::receiver, [this](){
                             _handledConnection->ring()->async_write(
                                     _handledConnection->fd(),
                                     std::make_shared<std::string>("250 Operation successful\r\n"),
@@ -324,7 +324,7 @@ namespace mp{
         }
     }
 
-    void FTPConnectionStateLoggedIn::pwd() const {
+    void ControlConnectionStateLoggedIn::pwd() const {
         std::filesystem::path path = "/"/_handledConnection->pwd();
         _handledConnection->ring()->async_write(
                 _handledConnection->fd(),
@@ -334,7 +334,7 @@ namespace mp{
         );
     }
 
-    void FTPConnectionStateLoggedIn::list(std::filesystem::path path) const {
+    void ControlConnectionStateLoggedIn::list(std::filesystem::path path) const {
         //Проходом по directory_iterator выбираем все файлы и отправляем их filenames
         try {
             path = parsePath(_handledConnection->pwd(), path);
@@ -353,7 +353,7 @@ namespace mp{
                     std::make_shared<std::string>("150 Opened data connection\r\n"s),
                     28,
                     [this, path](int res) mutable {
-                        _handledConnection->postDataSendTask(std::move(path), ConnectionMode::lister, [this](){
+                        _handledConnection->postDataSendTask(std::move(path), DataConnectionMode::lister, [this](){
                             _handledConnection->ring()->async_write(
                                     _handledConnection->fd(),
                                     std::make_shared<std::string>("250 Operation successful\r\n"),
@@ -373,7 +373,7 @@ namespace mp{
             );
     }
 
-    void FTPConnectionStateLoggedIn::pasv() {
+    void ControlConnectionStateLoggedIn::pasv() {
         _handledConnection->makePasv();
     }
 

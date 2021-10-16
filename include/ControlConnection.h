@@ -1,5 +1,5 @@
-#ifndef URING_TCP_SERVER_FTPCONNECTION_H
-#define URING_TCP_SERVER_FTPCONNECTION_H
+#ifndef URING_TCP_SERVER_CONTROLCONNECTION_H
+#define URING_TCP_SERVER_CONTROLCONNECTION_H
 
 #include <string>
 #include <vector>
@@ -7,18 +7,18 @@
 #include <arpa/inet.h>
 #include <algorithm>
 #include <mutex>
-#include <FTPCommon.h>
+#include <Common.h>
 
-namespace mp {
+namespace ftp {
 
     using namespace std::string_literals;
 
-    class FTPConnection;
+    class ControlConnection;
 
-    class FTPConnectionState {
+    class ControlConnectionState {
 
     public:
-        explicit FTPConnectionState(FTPConnection* handledConnection): _handledConnection(handledConnection) {}
+        explicit ControlConnectionState(ControlConnection* handledConnection): _handledConnection(handledConnection) {}
 
         virtual void user(const std::string& username) = 0;
         virtual void cwd(std::string path) = 0;
@@ -35,60 +35,58 @@ namespace mp {
         virtual void list(std::filesystem::path path) const = 0;
         virtual void noop() const final;
 
-        virtual ~FTPConnectionState() = default;
+        virtual ~ControlConnectionState() = default;
 
     protected:
-        FTPConnection* _handledConnection;
+        ControlConnection* _handledConnection;
     };
 
-    enum class ConnectionMode{
+    enum class DataConnectionMode{
         sender,
         receiver,
         lister
     };
 
-    class FTPConnectionDataSender;
+    class DataConnection;
 
-    class FTPConnection: public FTPConnectionBase {
+    class ControlConnection: public ConnectionBase {
 
     public:
-        FTPConnection(FTPConnectionBase* parent,
+        ControlConnection(ConnectionBase* parent,
                       const std::filesystem::path&& root,
-                      const std::shared_ptr<FTPFileSystem>&& fileSystem,
-                      std::function<void(void)>&& waitingForConnectionCallback = [](){}
+                      const std::shared_ptr<FileSystemProxy>&& fileSystem
                       ):
-                      FTPConnectionBase(parent,
-                                        std::move(waitingForConnectionCallback)),
-                                        _root(root),
-                                        _fileSystem(fileSystem),
-                                        _command(std::make_shared<std::string>()),
-                                        _pasvFD(-1)
+                ConnectionBase(parent),
+                _root(root),
+                _fileSystem(fileSystem),
+                _command(std::make_shared<std::string>()),
+                _pasvFD(-1)
         {
             _command->clear();
             _command->reserve(500);
         }
 
-        //Starts an asynchronous FTP Connection
+        //Starts an asynchronous FTP ControlConnection
 //        void start();
 
         void processCommand(std::size_t commandLen);
 
-        [[nodiscard]]const std::shared_ptr<uring_wrapper>& ring() const { return _ring; }
+        [[nodiscard]]const std::shared_ptr<AsyncUring>& ring() const { return _ring; }
         const std::filesystem::path& pwd() const noexcept { return _pwd; }
         std::filesystem::path& pwd() noexcept { return _pwd; }
         bool hasChildConnections() noexcept { return !_childConnections.empty(); }
         const std::filesystem::path& root() const noexcept { return _root; }
-        void switchState(std::unique_ptr<FTPConnectionState>&& state) noexcept {
+        void switchState(std::unique_ptr<ControlConnectionState>&& state) noexcept {
             _pwd = "";
             _state = std::move(state);
         }
-        std::shared_ptr<FTPFileSystem> fileSystem() { return _fileSystem; }
+        std::shared_ptr<FileSystemProxy> fileSystem() { return _fileSystem; }
 
-        void postDataSendTask(std::filesystem::path&& path, ConnectionMode mode, std::function<void()>&& dataTransferEndCallback);
+        void postDataSendTask(std::filesystem::path&& path, DataConnectionMode mode, std::function<void()>&& dataTransferEndCallback);
 
         void makePasv();
 
-        void setStructure(FTPFileStructure structure) noexcept { _structure = structure; }
+        void setStructure(FileStructure structure) noexcept { _structure = structure; }
 
         Callback defaultAsyncOpHandler = [this](std::size_t res){
             if(res == -1) stop();
@@ -103,7 +101,7 @@ namespace mp {
         void stop() override {
             if(_pasvFD >= 0)
                 close(_pasvFD);
-            FTPConnectionBase::stop();
+            ConnectionBase::stop();
         }
 
     protected:
@@ -111,28 +109,28 @@ namespace mp {
         void startActing() override;
 
     private:
-        std::unique_ptr<FTPConnectionState> _state;
+        std::unique_ptr<ControlConnectionState> _state;
         std::filesystem::path _pwd;
         std::filesystem::path _root;
         std::shared_ptr<std::string> _command;
-        FTPRepresentationType _type;
-        FTPFileStructure _structure;
-        FTPTransferMode _mode;
+        RepresentationType _type;
+        FileStructure _structure;
+        TransferMode _mode;
         int _pasvFD;
-        std::shared_ptr<FTPConnectionDataSender> _currentPasvChild;
-        std::shared_ptr<mp::FTPFileSystem> _fileSystem;
+        std::shared_ptr<DataConnection> _currentPasvChild;
+        std::shared_ptr<FileSystemProxy> _fileSystem;
     };
 
-    class FTPConnectionDataSender: public FTPConnectionBase{
+    class DataConnection: public ConnectionBase{
     public:
 
-        FTPConnectionDataSender(FTPConnectionBase* parent,
-                                std::shared_ptr<FTPFileSystem>&& fileSystem,
-                                std::function<void(void)>&& waitingForConnectionCallback = [](){}
+        DataConnection(ConnectionBase* parent,
+                       std::shared_ptr<FileSystemProxy>&& fileSystem,
+                       std::function<void(void)>&& waitingForConnectionCallback = [](){}
         );
 
         void command(std::filesystem::path&& pathToFile,
-                     ConnectionMode mode,
+                     DataConnectionMode mode,
                      std::function<void(void)>&& dataTransmissionEndCallback);
 
     protected:
@@ -143,8 +141,8 @@ namespace mp {
 
     private:
         std::filesystem::path _pathToFile;
-        std::shared_ptr<FTPFileSystem> _fileSystem;
-        ConnectionMode _mode;
+        std::shared_ptr<FileSystemProxy> _fileSystem;
+        DataConnectionMode _mode;
         std::function<void(void)> _dataTransmissionEndCallback;
         int _fileFd;
         FILE* _fileStruct;
@@ -154,4 +152,4 @@ namespace mp {
 
 }
 
-#endif //URING_TCP_SERVER_FTPCONNECTION_H
+#endif //URING_TCP_SERVER_CONTROLCONNECTION_H
