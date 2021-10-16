@@ -1,7 +1,8 @@
 cmake_minimum_required(VERSION 3.16)
-project(uring_tcp_server)
 
-add_executable(uring_tcp_server
+project(AsyncFTPServer)
+
+add_executable(${PROJECT_NAME}
         src/main.cpp
         src/AsyncUring.cpp
         src/Server.cpp
