@@ -167,15 +167,24 @@ namespace ftp{
         if(
                 typeCode == std::string{static_cast<char>(RepresentationType::ASCII)} ||
                 typeCode == std::string{static_cast<char>(RepresentationType::ASCII)}
-                            + static_cast<char>(RepresentationType::NonPrint)
-                )
-            //Do nothing and print
+                            + static_cast<char>(RepresentationType::NonPrint)) {
+            _handledConnection->setRepresentationType(RepresentationType::ASCII);
             _handledConnection->ring()->async_write(
                     _handledConnection->fd(),
                     std::make_shared<std::string>("200 Type changed\r\n"s),
                     18,
                     _handledConnection->defaultAsyncOpHandler
             );
+        }
+        else if(typeCode == std::string{static_cast<char>(RepresentationType::Image)}){
+            _handledConnection->setRepresentationType(RepresentationType::Image);
+            _handledConnection->ring()->async_write(
+                    _handledConnection->fd(),
+                    std::make_shared<std::string>("200 Type changed\r\n"s),
+                    18,
+                    _handledConnection->defaultAsyncOpHandler
+            );
+        }
         else _handledConnection->ring()->async_write(
                     _handledConnection->fd(),
                     std::make_shared<std::string>("501 Invalid/Unsupported TYPE parameter\r\n"s),

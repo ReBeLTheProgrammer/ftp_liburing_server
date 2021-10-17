@@ -71,7 +71,8 @@ namespace ftp {
     };
     enum class RepresentationType: char{
         ASCII = 'A',
-        NonPrint = 'N'
+        NonPrint = 'N',
+        Image = 'I'
     };
     enum class FileStructure: char{
         File = 'F',

@@ -139,15 +139,17 @@ namespace ftp{
     void ControlConnection::postDataSendTask(std::filesystem::path&& path, DataConnectionMode mode,
                                              std::function<void()>&& dataTransferEndCallback) {
         if(_currentPasvChild)
-            _currentPasvChild->command(std::move(path), mode, std::move(dataTransferEndCallback));
+            _currentPasvChild->command(std::move(path), mode, _type, std::move(dataTransferEndCallback));
     }
 
 
     void DataConnection::command(path &&pathToFile, DataConnectionMode mode,
+                                 RepresentationType type,
                                  std::function<void()> &&dataTransmissionEndCallback) {
         _pathToFile = pathToFile;
         _mode = mode;
         _dataTransmissionEndCallback = dataTransmissionEndCallback;
+        _type = type;
         _bytesRead = 0;
 
         if(_mode == DataConnectionMode::sender)
@@ -172,7 +174,7 @@ namespace ftp{
             _buffer(std::make_shared<std::string>()){
         continue_transmission = [this](std::int64_t res){
             _buffer->clear();
-            _buffer->resize(1400);
+            _buffer->resize(65500);
             if(res < 0){
                 //previous socket/file operation failed - assume it is closed.
                 if(_mode != DataConnectionMode::lister)
@@ -188,8 +190,10 @@ namespace ftp{
                             //read from file successful
                             _buffer->resize(res);
                             int pos = 0;
-                            while((pos = _buffer->find('\n', pos + 2)) != std::string::npos)
-                                _buffer->replace(pos, 1, "\r\n");
+                            if(_type == RepresentationType::ASCII){
+                                while ((pos = _buffer->find("\n", pos + 3)) != std::string::npos)
+                                    _buffer->replace(pos, 1, "\r\n");
+                            }
                             _bytesRead += res;
                             _ring->async_write_some(_fd, std::move(_buffer), continue_transmission);
                         } else {
@@ -205,8 +209,10 @@ namespace ftp{
                             //read from socket successful
                             _buffer->resize(res);
                             int pos = 0;
-                            while((pos = _buffer->find("\r\n", pos + 1)) != std::string::npos)
-                                _buffer->replace(pos, 2, "\n");
+                            if(_type == RepresentationType::ASCII){
+                                while ((pos = _buffer->find("\r\n", pos + 1)) != std::string::npos)
+                                    _buffer->replace(pos, 2, "\n");
+                            }
                             _bytesRead += _buffer->size();
                             _ring->async_write_some(_fileFd, std::move(_buffer), continue_transmission, _bytesRead - _buffer->size());
                         } else {
@@ -223,8 +229,10 @@ namespace ftp{
                             //read from file successful
                             _buffer->resize(res);
                             int pos = 0;
-                            while((pos = _buffer->find('\n', pos + 2)) != std::string::npos)
-                                _buffer->replace(pos, 1, "\r\n");
+                            if(_type == RepresentationType::ASCII){
+                                while ((pos = _buffer->find('\n', pos + 2)) != std::string::npos)
+                                    _buffer->replace(pos, 1, "\r\n");
+                            }
                             _bytesRead += res;
                             _ring->async_write_some(_fd, std::move(_buffer), continue_transmission);
                         } else {

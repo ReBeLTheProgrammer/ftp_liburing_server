@@ -72,9 +72,7 @@ namespace ftp {
         void processCommand(std::size_t commandLen);
 
         [[nodiscard]]const std::shared_ptr<AsyncUring>& ring() const { return _ring; }
-        const std::filesystem::path& pwd() const noexcept { return _pwd; }
         std::filesystem::path& pwd() noexcept { return _pwd; }
-        bool hasChildConnections() noexcept { return !_childConnections.empty(); }
         const std::filesystem::path& root() const noexcept { return _root; }
         void switchState(std::unique_ptr<ControlConnectionState>&& state) noexcept {
             _pwd = "";
@@ -87,6 +85,7 @@ namespace ftp {
         void makePasv();
 
         void setStructure(FileStructure structure) noexcept { _structure = structure; }
+        void setRepresentationType(RepresentationType type) noexcept { _type = type; }
 
         Callback defaultAsyncOpHandler = [this](std::size_t res){
             if(res == -1) stop();
@@ -131,6 +130,7 @@ namespace ftp {
 
         void command(std::filesystem::path&& pathToFile,
                      DataConnectionMode mode,
+                     RepresentationType _type,
                      std::function<void(void)>&& dataTransmissionEndCallback);
 
     protected:
@@ -148,6 +148,7 @@ namespace ftp {
         FILE* _fileStruct;
         std::shared_ptr<std::string> _buffer;
         std::uint64_t _bytesRead;
+        RepresentationType _type;
     };
 
 }

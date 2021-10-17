@@ -2,6 +2,7 @@
 #include <Server.h>
 
 int main() {
+    signal(SIGPIPE, SIG_IGN);
     sockaddr_in address;
     address.sin_family = AF_INET;
     address.sin_port = 25554;
