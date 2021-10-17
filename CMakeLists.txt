@@ -19,6 +19,6 @@ set_target_properties(${PROJECT_NAME} PROPERTIES CXX_EXTENSIONS OFF)
 list(APPEND CMAKE_MODULE_PATH ${CMAKE_CURRENT_LIST_DIR}/CMake)
 
 find_package(uring REQUIRED)
-find_package(Boost 1.75 REQUIRED)
+find_package(Boost 1.75 REQUIRED COMPONENTS program_options)
 
-target_link_libraries(${PROJECT_NAME} PUBLIC uring Boost::boost)
+target_link_libraries(${PROJECT_NAME} PUBLIC uring Boost::boost Boost::program_options)
